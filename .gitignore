@@ -11,8 +11,10 @@ ENV/
 # Streamlit
 .streamlit/secrets.toml
 
-# 데이터 (선택사항 - 엑셀 파일은 GitHub에 올려야 함)
-# insurance_data.xlsx
+# SQLite (더 이상 사용 안 함)
+data/
+*.sqlite
+*.db
 
 # IDE
 .vscode/
@@ -23,3 +25,7 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# 임시 파일
+*.tmp
+*.bak
