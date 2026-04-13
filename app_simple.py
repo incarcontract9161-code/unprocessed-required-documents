@@ -230,7 +230,7 @@ def main():
             
             # 테이블 표시
             st.dataframe(
-                org_df.style.background_gradient(subset=["미처리율"], cmap="Reds"),
+                org_df,
                 use_container_width=True,
                 hide_index=True
             )
