@@ -1,7 +1,25 @@
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Streamlit
 .streamlit/secrets.toml
-data/
-*.sqlite
+
+# 데이터 (선택사항 - 엑셀 파일은 GitHub에 올려야 함)
+# insurance_data.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
