@@ -29,7 +29,7 @@ st.set_page_config(page_title="보험 서류 스캔 관리 대시보드", layout
 EXCEL_FILE = "insurance_data.xlsx"
 
 # Render 배포 시 환경변수(APP_PASSWORD) 사용, 로컬 테스트 시 기본값 적용
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "9161incar0414//")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar2026")
 
 GUIDANCE_TEXT = (
     "【책임판매 필수서류 안내】\n"
@@ -43,6 +43,23 @@ PRECAUTION_TEXT_COVER = (
     "신계약 리스크 점검 강화, 회사 지원금 및 특인 제한 등 불이익이 발생할 수 있습니다."
 )
 PRECAUTION_TEXT_SHEET = "본인은 위 내용을 안내받았음을 확인합니다."
+
+# 필수 서류 상세 안내 표 데이터
+REQUIRED_DOCS_TABLE = [
+    ["No.", "서류명", "법적 근거", "목적 및 주요 내용"],
+    ["1", "개인정보동의서", 
+     "개인정보보호법 15조 및\n대리점 표준 내부통제기준 27조",
+     "개인정보 처리 적법 근거, 보유계약 전산 관리 과정에\n따른 개인정보 처리로 신계약시 필수 징구"],
+    ["2", "비교설명확인서",
+     "보험업감독규정\n별표 5-6",
+     "유사 상품 3개 이상 비교·설명 이행\n사실 고객 확인 서명"],
+    ["3", "고지의무확인서",
+     "금융소비자보호법 26조와\n동법시행령 24조",
+     "판매자 권한·책임·보상 관련 핵심 사항 고지,\n소비자 소인 예방"],
+    ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)",
+     "금융소비자보호법 제17·19조\n영업지원기준안",
+     "약관,청약서 부본 제공, 중요 상품 이해 및\n자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
+]
 
 # ==========================================
 # 2. 데이터 로딩 (GitHub 엑셀 기반)
@@ -331,6 +348,8 @@ def ledger_pdf(families_by_dept, period_text, df_src):
         E += [Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
+              Paragraph("【필수 서류 상세 안내】", st_["section"]),
+              _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1), Spacer(1,8),
               Paragraph("작성일: _______________", st_["date"]), Spacer(1,4),
               _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,140), PageBreak()]
         for _, fam in grp_df.drop_duplicates("영업가족").iterrows():
@@ -351,7 +370,9 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[60,60,60,60],fn), Spacer(1,8),
                   Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
-                  Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,10),
+                  Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
+                  Paragraph("【필수 서류 상세 안내】", st_["section"]),
+                  _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1), Spacer(1,8),
                   Paragraph("작성일: _______________", st_["date"])]
             sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]],colWidths=[260])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
@@ -403,6 +424,38 @@ def ledger_excel(families_by_dept, period_text, df_src):
         ws_c.cell(r,1,GUIDANCE_TEXT).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=45; r+=2
         ws_c.cell(r,1,PRECAUTION_TEXT_COVER).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
         ws_c.cell(r,1,PRECAUTION_TEXT_SHEET).font=nf; r+=2
+        
+        # 필수 서류 상세 안내 표 추가
+        ws_c.cell(r,1,"【필수 서류 상세 안내】").font=Font(name=tfn,size=10,bold=True); r+=1
+        # 표 헤더
+        for ci, header in enumerate(["No.", "서류명", "법적 근거", "목적 및 주요 내용"], 1):
+            c = ws_c.cell(r, ci, header)
+            c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
+        ws_c.column_dimensions[get_column_letter(1)].width = 6
+        ws_c.column_dimensions[get_column_letter(2)].width = 20
+        ws_c.column_dimensions[get_column_letter(3)].width = 25
+        ws_c.column_dimensions[get_column_letter(4)].width = 45
+        r += 1
+        
+        # 표 데이터
+        docs_data = [
+            ["1", "개인정보동의서", "개인정보보호법 15조 및\n대리점 표준 내부통제기준 27조", 
+             "개인정보 처리 적법 근거, 보유계약 전산 관리 과정에 따른 개인정보 처리로 신계약시 필수 징구"],
+            ["2", "비교설명확인서", "보험업감독규정\n별표 5-6", 
+             "유사 상품 3개 이상 비교·설명 이행 사실 고객 확인 서명"],
+            ["3", "고지의무확인서", "금융소비자보호법 26조와\n동법시행령 24조", 
+             "판매자 권한·책임·보상 관련 핵심 사항 고지, 소비자 소인 예방"],
+            ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)", "금융소비자보호법 제17·19조\n영업지원기준안", 
+             "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
+        ]
+        for row_data in docs_data:
+            for ci, val in enumerate(row_data, 1):
+                c = ws_c.cell(r, ci, val)
+                c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
+            ws_c.row_dimensions[r].height = 35
+            r += 1
+        r += 1
+        
         ws_c.cell(r,1,"작성일: _______________").font=bf; r+=2
         for i,sig in enumerate(["부문장 확인","총괄 확인","부서장 확인"]):
             ws_c.cell(r,i*2+1,sig).font=sig_f; ws_c.cell(r,i*2+2,"________________ (인)").font=Font(name=tfn,color="888888")
@@ -431,6 +484,38 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ws_f.cell(r_f,1,GUIDANCE_TEXT).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=40; r_f+=2
             ws_f.cell(r_f,1,PRECAUTION_TEXT_COVER).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=30; r_f+=2
             ws_f.cell(r_f,1,PRECAUTION_TEXT_SHEET).font=nf; r_f+=2
+            
+            # 필수 서류 상세 안내 표 추가
+            ws_f.cell(r_f,1,"【필수 서류 상세 안내】").font=Font(name=tfn,size=10,bold=True); r_f+=1
+            # 표 헤더
+            for ci, header in enumerate(["No.", "서류명", "법적 근거", "목적 및 주요 내용"], 1):
+                c = ws_f.cell(r_f, ci, header)
+                c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
+            ws_f.column_dimensions[get_column_letter(1)].width = 6
+            ws_f.column_dimensions[get_column_letter(2)].width = 20
+            ws_f.column_dimensions[get_column_letter(3)].width = 25
+            ws_f.column_dimensions[get_column_letter(4)].width = 45
+            r_f += 1
+            
+            # 표 데이터
+            docs_data = [
+                ["1", "개인정보동의서", "개인정보보호법 15조 및\n대리점 표준 내부통제기준 27조", 
+                 "개인정보 처리 적법 근거, 보유계약 전산 관리 과정에 따른 개인정보 처리로 신계약시 필수 징구"],
+                ["2", "비교설명확인서", "보험업감독규정\n별표 5-6", 
+                 "유사 상품 3개 이상 비교·설명 이행 사실 고객 확인 서명"],
+                ["3", "고지의무확인서", "금융소비자보호법 26조와\n동법시행령 24조", 
+                 "판매자 권한·책임·보상 관련 핵심 사항 고지, 소비자 소인 예방"],
+                ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)", "금융소비자보호법 제17·19조\n영업지원기준안", 
+                 "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
+            ]
+            for row_data in docs_data:
+                for ci, val in enumerate(row_data, 1):
+                    c = ws_f.cell(r_f, ci, val)
+                    c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
+                ws_f.row_dimensions[r_f].height = 35
+                r_f += 1
+            r_f += 1
+            
             ws_f.cell(r_f,1,"작성일: _______________").font=bf; r_f+=1
             ws_f.cell(r_f,1,"영업가족대표 서명: ________________ (인)").font=sig_f
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
