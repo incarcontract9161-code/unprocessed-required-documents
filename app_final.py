@@ -42,7 +42,7 @@ PRECAUTION_TEXT_COVER = (
     "대상 건은 모집질서 위반 및 특정 리스크에 준하여 관리됩니다.\n"
     "신계약 리스크 점검 강화, 회사 지원금 및 특인 제한 등 불이익이 발생할 수 있습니다."
 )
-PRECAUTION_TEXT_CONFIRM = "영업가족별 미처리현황 및 유의사항에 대한 안내되었음을 확인합니다."
+PRECAUTION_TEXT_CONFIRM = "영업가족별 미처리 현황 및 유의사항에 대하여 안내하였음을 확인합니다."
 PRECAUTION_TEXT_SHEET = "영업가족별 미처리현황 및 유의사항에 대한 안내받았음을 확인합니다."
 SIGNATURE_CONFIRMATION_TEXT = "영업가족에게 안내하였음을 확인합니다."
 
