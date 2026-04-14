@@ -85,6 +85,10 @@ def load_data():
         df["FA고지_c"] = df["FA고지"].fillna("").astype(str).str.strip()
         df["비교설명_c"] = df["비교설명"].fillna("").astype(str).str.strip()
         df["완전판매_c"] = df["완전판매"].fillna("").astype(str).str.strip()
+        df["FA_miss"] = (df["FA고지_c"] == "미스캔").astype(int)
+        df["비교_miss"] = (df["비교설명_c"] == "미스캔").astype(int)
+        df["완판_miss"] = (df["완전판매_c"] == "미스캔").astype(int)
+        df["미스캔"] = df[["FA_miss", "비교_miss", "완판_miss"]].sum(axis=1)
         
         return df
     except Exception as e:
@@ -101,78 +105,76 @@ def get_file_update_time():
 # ==========================================
 # 3. 집계 헬퍼
 # ==========================================
-def _miss(s):
-    return (s.fillna("").astype(str).str.strip() == "미스캔").sum()
-
-def _miss_cs(s):
-    s2 = s.fillna("").astype(str).str.strip()
-    return ((s2 != "해당없음") & (s2 == "미스캔")).sum()
+# Numeric miss flags are precomputed in load_data to speed aggregation.
 
 # ==========================================
 # 4. 전체 계층 리포트
 # ==========================================
+@st.cache_data(ttl=300)
 def build_hierarchy_report(df, months=None):
     src = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
     if src.empty: return pd.DataFrame()
     rows = []
     for bm, df_bm in src.groupby("부문"):
-        fa=_miss(df_bm["FA고지_c"]); bi=_miss(df_bm["비교설명_c"]); cs=_miss_cs(df_bm["완전판매_c"])
-        tot=fa+bi+cs; cnt=len(df_bm)
+        fa = int(df_bm["FA_miss"].sum()); bi = int(df_bm["비교_miss"].sum()); cs = int(df_bm["완판_miss"].sum())
+        tot = fa + bi + cs; cnt = len(df_bm)
         rows.append({"구분":"부문계", "부문":bm, "총괄":"", "부서":"", "영업가족":"",
                      "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot, "대상건":cnt,
                      "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
         for tg, df_tg in df_bm.groupby("총괄"):
-            fa2=_miss(df_tg["FA고지_c"]); bi2=_miss(df_tg["비교설명_c"]); cs2=_miss_cs(df_tg["완전판매_c"])
-            tot2=fa2+bi2+cs2; cnt2=len(df_tg)
+            fa2 = int(df_tg["FA_miss"].sum()); bi2 = int(df_tg["비교_miss"].sum()); cs2 = int(df_tg["완판_miss"].sum())
+            tot2 = fa2 + bi2 + cs2; cnt2 = len(df_tg)
             rows.append({"구분":"총괄계", "부문":bm, "총괄":tg, "부서":"", "영업가족":"",
                          "FA":fa2, "비교":bi2, "완판":cs2, "총미스캔":tot2, "대상건":cnt2,
                          "미처리율":round(tot2/cnt2*100,1) if cnt2 else 0.0})
             for ds, df_ds in df_tg.groupby("부서"):
-                fa3=_miss(df_ds["FA고지_c"]); bi3=_miss(df_ds["비교설명_c"]); cs3=_miss_cs(df_ds["완전판매_c"])
-                tot3=fa3+bi3+cs3; cnt3=len(df_ds)
+                fa3 = int(df_ds["FA_miss"].sum()); bi3 = int(df_ds["비교_miss"].sum()); cs3 = int(df_ds["완판_miss"].sum())
+                tot3 = fa3 + bi3 + cs3; cnt3 = len(df_ds)
                 rows.append({"구분":"부서계", "부문":bm, "총괄":tg, "부서":ds, "영업가족":"",
                              "FA":fa3, "비교":bi3, "완판":cs3, "총미스캔":tot3, "대상건":cnt3,
                              "미처리율":round(tot3/cnt3*100,1) if cnt3 else 0.0})
                 for fg, df_fg in df_ds.groupby("영업가족"):
-                    fa4=_miss(df_fg["FA고지_c"]); bi4=_miss(df_fg["비교설명_c"]); cs4=_miss_cs(df_fg["완전판매_c"])
-                    t4=fa4+bi4+cs4; c4=len(df_fg)
+                    fa4 = int(df_fg["FA_miss"].sum()); bi4 = int(df_fg["비교_miss"].sum()); cs4 = int(df_fg["완판_miss"].sum())
+                    t4 = fa4 + bi4 + cs4; c4 = len(df_fg)
                     rows.append({"구분":"영업가족", "부문":bm, "총괄":tg, "부서":ds, "영업가족":fg,
                                  "FA":fa4, "비교":bi4, "완판":cs4, "총미스캔":t4, "대상건":c4,
                                  "미처리율":round(t4/c4*100,1) if c4 else 0.0})
     return pd.DataFrame(rows)
 
+@st.cache_data(ttl=300)
 def build_monthly_hierarchy(df, months=None):
     src = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
     if src.empty: return pd.DataFrame()
     rows = []
     for mon, dm in src.groupby("월_피리어드"):
         for bm, db in dm.groupby("부문"):
-            fa_b=_miss(db["FA고지_c"]); bi_b=_miss(db["비교설명_c"]); cs_b=_miss_cs(db["완전판매_c"])
+            fa_b = int(db["FA_miss"].sum()); bi_b = int(db["비교_miss"].sum()); cs_b = int(db["완판_miss"].sum())
             rows.append({"월":mon, "구분":"부문계", "부문":bm, "총괄":"", "부서":"",
                          "FA":fa_b, "비교":bi_b, "완판":cs_b, "총미스캔":fa_b+bi_b+cs_b,
                          "대상건":len(db), "미처리율":round((fa_b+bi_b+cs_b)/len(db)*100,1) if len(db) else 0.0})
-        for tg, dt in db.groupby("총괄"):
-            fa_t=_miss(dt["FA고지_c"]); bi_t=_miss(dt["비교설명_c"]); cs_t=_miss_cs(dt["완전판매_c"])
-            rows.append({"월":mon, "구분":"총괄계", "부문":bm, "총괄":tg, "부서":"",
-                         "FA":fa_t, "비교":bi_t, "완판":cs_t, "총미스캔":fa_t+bi_t+cs_t,
-                         "대상건":len(dt), "미처리율":round((fa_t+bi_t+cs_t)/len(dt)*100,1) if len(dt) else 0.0})
-            for ds, dd in dt.groupby("부서"):
-                fa=_miss(dd["FA고지_c"]); bi=_miss(dd["비교설명_c"]); cs=_miss_cs(dd["완전판매_c"])
-                tot=fa+bi+cs; cnt=len(dd)
-                rows.append({"월":mon, "구분":"부서계", "부문":bm, "총괄":tg, "부서":ds,
-                             "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
-                             "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
+            for tg, dt in db.groupby("총괄"):
+                fa_t = int(dt["FA_miss"].sum()); bi_t = int(dt["비교_miss"].sum()); cs_t = int(dt["완판_miss"].sum())
+                rows.append({"월":mon, "구분":"총괄계", "부문":bm, "총괄":tg, "부서":"",
+                             "FA":fa_t, "비교":bi_t, "완판":cs_t, "총미스캔":fa_t+bi_t+cs_t,
+                             "대상건":len(dt), "미처리율":round((fa_t+bi_t+cs_t)/len(dt)*100,1) if len(dt) else 0.0})
+                for ds, dd in dt.groupby("부서"):
+                    fa = int(dd["FA_miss"].sum()); bi = int(dd["비교_miss"].sum()); cs = int(dd["완판_miss"].sum())
+                    tot = fa + bi + cs; cnt = len(dd)
+                    rows.append({"월":mon, "구분":"부서계", "부문":bm, "총괄":tg, "부서":ds,
+                                 "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
+                                 "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
     return pd.DataFrame(rows)
 
 # ==========================================
 # 5. 관리대장 선정 대상
 # ==========================================
+@st.cache_data(ttl=300)
 def get_ledger_targets(df, months):
     src = df[df["월_피리어드"].isin(months)].copy()
     if src.empty: return {}
     agg = src.groupby(["부문", "총괄", "부서", "영업가족"]).agg(
-        FA=("FA고지_c", _miss), 비교=("비교설명_c", _miss),
-        완판=("완전판매_c", _miss_cs), 대상=("증권번호", "count")
+        FA=("FA_miss", "sum"), 비교=("비교_miss", "sum"),
+        완판=("완판_miss", "sum"), 대상=("증권번호", "count")
     ).reset_index()
     agg["총미스캔"] = agg[["FA", "비교", "완판"]].sum(axis=1)
     agg = agg[agg["총미스캔"] > 0]
@@ -393,7 +395,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
               Paragraph(GUIDANCE_TEXT, notice_left), Spacer(1,8)]
         if not dept_src.empty:
             E.append(Paragraph("▶ 영업가족별 · 월별 · 양식별 미처리 현황", section_left))
-            fam_mon = dept_src.groupby(["영업가족","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
+            fam_mon = dept_src.groupby(["영업가족","월_피리어드"]).agg(FA=("FA_miss","sum"),비교=("비교_miss","sum"),완판=("완판_miss","sum")).reset_index()
             fam_mon["계"] = fam_mon[["FA","비교","완판"]].sum(axis=1); fam_mon = fam_mon[fam_mon["계"] > 0]
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
@@ -417,7 +419,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             E += [Paragraph("신계약 필수서류 미처리 확인서", title_left), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
                   Paragraph(f"소속: {sec}  > {tg}  > {dept_name}  >  <b>{fam_name}</b>", indent_style), Paragraph(f"적용기간: {period_text}", date_indent), Spacer(1,6)]
             fam_src = df_src[(df_src["영업가족"]==fam_name) & df_src["소속"].notna()]
-            sosok = fam_src.groupby(["소속","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
+            sosok = fam_src.groupby(["소속","월_피리어드"]).agg(FA=("FA_miss","sum"),비교=("비교_miss","sum"),완판=("완판_miss","sum")).reset_index()
             sosok["계"] = sosok[["FA","비교","완판"]].sum(axis=1); sosok = sosok[sosok["계"] > 0]
             E.append(Paragraph("▶ 소속별 · 월별 · 양식별 미처리 건수", section_left))
             if not sosok.empty:
@@ -511,7 +513,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
         ws_c.cell(r,1,"▶ 영업가족별 · 월별 · 양식별 미처리 현황").font=Font(name=tfn,size=10,bold=True); r+=1
         dept_src=df_src[df_src["부서"]==dept_name]
         if not dept_src.empty:
-            fam_mon=dept_src.groupby(["영업가족","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
+            fam_mon=dept_src.groupby(["영업가족","월_피리어드"]).agg(FA=("FA_miss","sum"),비교=("비교_miss","sum"),완판=("완판_miss","sum")).reset_index()
             fam_mon["계"]=fam_mon[["FA","비교","완판"]].sum(axis=1); fam_mon=fam_mon[fam_mon["계"] > 0]
             hdrs, cws = ["영업가족","월","FA고지","비교설명","완전판매","계"], [25,20,13,13,13,13]
             for ci,(h,w) in enumerate(zip(hdrs,cws),1):
@@ -539,7 +541,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ws_f["A3"]=f"    적용기간: {period_text}"; ws_f["A3"].font=bf; ws_f["A3"].alignment=Alignment(horizontal="left")
             r_f=5; ws_f.cell(r_f,1,"▶ 소속별 · 월별 · 양식별 미처리 건수").font=Font(name=tfn,size=10,bold=True); r_f+=1
             fam_src=df_src[(df_src["영업가족"]==fam_name) & df_src["소속"].notna()]
-            sosok=fam_src.groupby(["소속","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
+            sosok=fam_src.groupby(["소속","월_피리어드"]).agg(FA=("FA_miss","sum"),비교=("비교_miss","sum"),완판=("완판_miss","sum")).reset_index()
             sosok["계"]=sosok[["FA","비교","완판"]].sum(axis=1); sosok=sosok[sosok["계"] > 0]
             sh, sc = ["소속","월","FA고지","비교설명","완전판매","계"], [25,20,13,13,13,13]
             for ci,(h,w) in enumerate(zip(sh,sc),1): c=ws_f.cell(r_f,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center"); ws_f.column_dimensions[get_column_letter(ci)].width=w
@@ -663,7 +665,7 @@ def dashboard_page():
         return
 
     # KPI 메트릭
-    fa_t, bi_t, cs_t = _miss(df_sel["FA고지_c"]), _miss(df_sel["비교설명_c"]), _miss_cs(df_sel["완전판매_c"])
+    fa_t, bi_t, cs_t = int(df_sel["FA_miss"].sum()), int(df_sel["비교_miss"].sum()), int(df_sel["완판_miss"].sum())
     tot, rate = fa_t+bi_t+cs_t, round((fa_t+bi_t+cs_t)/len(df_sel)*100,1) if len(df_sel)>0 else 0.0
     m1,m2,m3,m4 = st.columns(4)
     m1.metric("📄 총 계약건수", f"{len(df_sel):,}건")
@@ -683,9 +685,9 @@ def dashboard_page():
         with cs1: search_text = st.text_input("🔍 조직 검색", placeholder="조직명 입력...")
         with cs2: agg_group = st.selectbox("집계 기준 (랭킹 단위)", ["부문","총괄","부서","영업가족"])
         agg = df_sel.groupby(agg_group).agg(
-            FA고지_미스캔=("FA고지_c",_miss),
-            비교설명_미스캔=("비교설명_c",_miss),
-            완전판매_미스캔=("완전판매_c",_miss_cs),
+            FA고지_미스캔=("FA_miss","sum"),
+            비교설명_미스캔=("비교_miss","sum"),
+            완전판매_미스캔=("완판_miss","sum"),
             대상건=("증권번호","count")
         ).reset_index()
         agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
@@ -738,7 +740,7 @@ def dashboard_page():
         mc1, mc2 = st.columns([1, 2])
         with mc1: map_level = st.selectbox("집계 단위", ["부문", "총괄", "부서", "영업가족"], key="map_level")
         with mc2: map_type = st.radio("차트 유형", ["🥧 원그래프", "🔲 트리맵"], horizontal=True, key="map_type")
-        map_agg = df_sel.groupby(map_level).agg(미스캔=("FA고지_c", _miss), 대상건=("증권번호", "count")).reset_index()
+        map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔", "sum"), 대상건=("증권번호", "count")).reset_index()
         map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
         map_agg = map_agg[map_agg["미스캔"] > 0].sort_values("미스캔", ascending=False)
         if map_agg.empty: st.info("미처리 건수가 있는 데이터가 없습니다.")
