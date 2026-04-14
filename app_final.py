@@ -256,7 +256,7 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
         if sub_rows and i in sub_rows: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#E9EEF8")))
     t.setStyle(TableStyle(cmds)); return t
 
-def _sig_table(labels, fn, cw=140):
+def _sig_table(labels, fn, cw=120):
     t = Table([labels,["____________________"]*len(labels),["(인)"]*len(labels)], colWidths=[cw*1.4]*len(labels))
     t.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("FONTNAME",(0,0),(-1,-1),fn),
                            ("FONTSIZE",(0,0),(-1,-1),8.5),("TOPPADDING",(0,0),(-1,-1),5),
@@ -371,9 +371,9 @@ def ledger_pdf(families_by_dept, period_text, df_src):
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
               Paragraph("【필수 서류 상세 안내】", st_["section"]),
-              _tbl(REQUIRED_DOCS_TABLE, [12, 45, 65, 90], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+              _tbl(REQUIRED_DOCS_TABLE, [12, 60, 90, 198], fn, header_rows=1, align="LEFT"), Spacer(1,8),
               Paragraph("작성일: _______________", center_date_style), Spacer(1,4),
-              _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,140), PageBreak()]
+              _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,120), PageBreak()]
         for _, fam in grp_df.drop_duplicates("영업가족").iterrows():
             fam_name = fam["영업가족"]
             E += [Paragraph("신계약 필수서류 미처리 확인서", title_left), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
@@ -394,9 +394,9 @@ def ledger_pdf(families_by_dept, period_text, df_src):
                   Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
-                  _tbl(REQUIRED_DOCS_TABLE, [12, 45, 65, 90], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+                  _tbl(REQUIRED_DOCS_TABLE, [12, 60, 90, 198], fn, header_rows=1, align="LEFT"), Spacer(1,8),
                   Paragraph("작성일: _______________", center_date_style)]
-            sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]],colWidths=[260])
+            sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]], colWidths=[120*1.4*3])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
                                       ("TOPPADDING",(0,0),(-1,-1),8),("BOTTOMPADDING",(0,0),(-1,-1),8),("BOX",(0,0),(-1,-1),0.5,colors.grey)]))
             E += [sig2, PageBreak()]
