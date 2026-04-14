@@ -321,7 +321,7 @@ def report_excel(df, months):
 # ==========================================
 def report_pdf(df, months):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm,leftMargin=10*mm, topMargin=12*mm,bottomMargin=12*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     E = [Paragraph("서류 미처리 현황 계층별 집계", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,6)]
     report = build_hierarchy_report(df, months)
@@ -332,13 +332,13 @@ def report_pdf(df, months):
         for i,(_,r) in enumerate(report.iterrows()):
             drows.append([r["구분"],r["부문"],r["총괄"],r["부서"],r["영업가족"],r["FA"],r["비교"],r["완판"],r["총미스캔"],r["대상건"],f"{r['미처리율']:.1f}%"])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[22,36,36,36,42,16,16,16,22,18,22],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr+drows,[24,32,32,32,45,18,18,18,26,22,26],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
         mrows=[[r["월"],r["구분"],r["부문"],r["총괄"],r["부서"],r["FA"],r["비교"],r["완판"],r["총미스캔"],r["대상건"],f"{r['미처리율']:.1f}%"] for _,r in monthly.iterrows()]
         msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
-        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[28,22,36,36,40,16,16,16,22,18,22],fn,sub_rows=msub))
+        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[26,24,32,32,45,18,18,18,26,22,26],fn,sub_rows=msub))
     doc.build(E); buf.seek(0); return buf
 
 # ==========================================
@@ -414,7 +414,11 @@ def ledger_pdf(families_by_dept, period_text, df_src):
 # ==========================================
 def ledger_excel(families_by_dept, period_text, df_src):
     wb = Workbook(); ws0 = wb.active; ws0.title="목차"
-    tfn, hf, bf, nf, sig_f = "맑은 고딕", Font(name=tfn,size=9,bold=True,color="FFFFFF"), Font(name=tfn,size=9), Font(name=tfn,size=8,italic=True,color="CC0000"), Font(name=tfn,size=9,bold=True)
+    tfn = "맑은 고딕"
+    hf = Font(name=tfn,size=9,bold=True,color="FFFFFF")
+    bf = Font(name=tfn,size=9)
+    nf = Font(name=tfn,size=8,italic=True,color="CC0000")
+    sig_f = Font(name=tfn,size=9,bold=True)
     bdr, h_fill, alt_fill = Border(left=Side("thin"),right=Side("thin"),top=Side("thin"),bottom=Side("thin")), PatternFill("solid",fgColor="4472C4"), PatternFill("solid",fgColor="EEF3FB")
     today = datetime.now().strftime("%Y년 %m월 %d일")
     ws0.merge_cells("A1:F1"); ws0["A1"]=f"관리대장 목차  ·  {period_text}  ·  발급: {today}"
