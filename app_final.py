@@ -363,16 +363,16 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not sosok.empty:
                 td2=[["소속","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in sosok.iterrows(): td2.append([r["소속"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td2,[80,36,32,32,32,28],fn))
+                E.append(_tbl(td2,[120,54,48,48,48,42],fn))
             else: E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
             sum_d=[["FA고지","비교설명","완전판매","총계"],[str(int(fam["FA"])),str(int(fam["비교"])),str(int(fam["완판"])),str(int(fam["총미스캔"]))]]
-            E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[60,60,60,60],fn), Spacer(1,8),
+            E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[120,120,120,120],fn), Spacer(1,8),
                   Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
-                  _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1), Spacer(1,8),
+                  _tbl(REQUIRED_DOCS_TABLE, [15, 100, 140, 200], fn, header_rows=1), Spacer(1,8),
                   Paragraph("작성일: _______________", st_["date"])]
             sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]],colWidths=[260])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
