@@ -221,17 +221,19 @@ def _pdf_styles(fn):
         "section": ps("SC", fontSize=9,  bold=True,  spaceAfter=2),
     }
 
-def _tbl(data, cw, fn, header_rows=1, sub_rows=None):
+def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
     if not data or len(data) < 1: return Spacer(1,0)
     cw_scaled = [w * 1.4 for w in cw]
+    align_map = {"LEFT":0, "CENTER":1, "RIGHT":2}
+    align_value = align_map.get(align.upper(), 1)
     S = getSampleStyleSheet()
     cell_style = ParagraphStyle(
         "tbl_cell",
         parent=S["Normal"],
         fontName=fn,
-        fontSize=7.5,
-        leading=9,
-        alignment=1,
+        fontSize=8,
+        leading=10,
+        alignment=align_value,
         wordWrap="CJK"
     )
     wrapped_data = [
@@ -240,18 +242,18 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None):
     ]
     t = Table(wrapped_data, colWidths=cw_scaled, repeatRows=header_rows)
     cmds = [
-        ("FONTNAME", (0,0),(-1,-1), fn), ("FONTSIZE", (0,0),(-1,-1), 7.5),
-        ("ALIGN", (0,0),(-1,-1), "CENTER"), ("VALIGN", (0,0),(-1,-1), "MIDDLE"),
+        ("FONTNAME", (0,0),(-1,-1), fn), ("FONTSIZE", (0,0),(-1,-1), 8),
+        ("ALIGN", (0,0),(-1,-1), align.upper()), ("VALIGN", (0,0),(-1,-1), "MIDDLE"),
         ("WORDWRAP", (0,0),(-1,-1), "CJK"),
         ("GRID", (0,0),(-1,-1), 0.4, colors.grey),
         ("LEFTPADDING", (0,0),(-1,-1), 4), ("RIGHTPADDING", (0,0),(-1,-1), 4),
         ("TOPPADDING", (0,0),(-1,-1), 4), ("BOTTOMPADDING",(0,0),(-1,-1), 4),
-        ("BACKGROUND", (0,0),(-1,header_rows-1), colors.HexColor(HDR_CLR)),
-        ("TEXTCOLOR", (0,0),(-1,header_rows-1), colors.whitesmoke),
+        ("BACKGROUND", (0,0),(-1,header_rows-1), colors.HexColor("#DCE6F1")),
+        ("TEXTCOLOR", (0,0),(-1,header_rows-1), colors.HexColor("#1F3864")),
     ]
     for i in range(header_rows, len(data)):
-        if (i-header_rows)%2==1: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor(ALT_CLR)))
-        if sub_rows and i in sub_rows: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor(SUB_CLR)))
+        if (i-header_rows)%2==1: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#F3F6FA")))
+        if sub_rows and i in sub_rows: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#E9EEF8")))
     t.setStyle(TableStyle(cmds)); return t
 
 def _sig_table(labels, fn, cw=140):
@@ -344,8 +346,9 @@ def report_pdf(df, months):
 # ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
     today = datetime.now().strftime("%Y년 %m월 %d일"); E = []
+    center_date_style = ParagraphStyle("CenterDate", parent=st_["date"], alignment=1)
     for dept_name, grp_df in families_by_dept.items():
         sec, tg = grp_df.iloc[0]["부문"], grp_df.iloc[0]["총괄"]
         E += [Paragraph("신계약 필수서류 미처리 확인서", st_["title"]), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
@@ -358,14 +361,14 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in fam_mon.iterrows(): td.append([r["영업가족"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td,[140,55,55,55,55,55],fn))
+                E.append(_tbl(td,[140,55,55,55,55,55],fn, align="LEFT"))
             E.append(Spacer(1,8))
         E += [Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
               Paragraph("【필수 서류 상세 안내】", st_["section"]),
-              _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1), Spacer(1,8),
-              Paragraph("작성일: _______________", st_["date"]), Spacer(1,4),
+              _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+              Paragraph("작성일: _______________", center_date_style), Spacer(1,4),
               _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,140), PageBreak()]
         for _, fam in grp_df.drop_duplicates("영업가족").iterrows():
             fam_name = fam["영업가족"]
@@ -378,17 +381,17 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not sosok.empty:
                 td2=[["소속","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in sosok.iterrows(): td2.append([r["소속"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td2,[140,55,55,55,55,55],fn))
+                E.append(_tbl(td2,[140,55,55,55,55,55],fn, align="LEFT"))
             else: E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
             sum_d=[["FA고지","비교설명","완전판매","총계"],[str(int(fam["FA"])),str(int(fam["비교"])),str(int(fam["완판"])),str(int(fam["총미스캔"]))]]
-            E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[120,120,120,120],fn), Spacer(1,8),
+            E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[120,120,120,120],fn, align="LEFT"), Spacer(1,8),
                   Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
-                  _tbl(REQUIRED_DOCS_TABLE, [15, 100, 140, 200], fn, header_rows=1), Spacer(1,8),
-                  Paragraph("작성일: _______________", st_["date"])]
+                  _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+                  Paragraph("작성일: _______________", center_date_style)]
             sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]],colWidths=[260])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
                                       ("TOPPADDING",(0,0),(-1,-1),8),("BOTTOMPADDING",(0,0),(-1,-1),8),("BOX",(0,0),(-1,-1),0.5,colors.grey)]))
