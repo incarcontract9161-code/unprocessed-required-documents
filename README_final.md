@@ -23,14 +23,17 @@ cd unprocessed-required-documents
 
 # 파일 복사:
 # - app_final.py (메인 앱)
-# - requirements.txt (패키지)
+# - requirements.txt (Python 패키지)
+# - packages.txt (시스템 패키지 - 한글 폰트)
 # - insurance_data.xlsx (실제 데이터)
 
 # Git 커밋
-git add app_final.py requirements.txt insurance_data.xlsx
-git commit -m "Streamlit 앱 최종 배포"
+git add app_final.py requirements.txt packages.txt insurance_data.xlsx
+git commit -m "Streamlit 앱 최종 배포 + 한글 폰트 설정"
 git push
 ```
+
+**중요: `packages.txt` 파일이 한글 폰트 문제를 해결합니다!**
 
 ### 2️⃣ Streamlit Cloud 배포
 
@@ -201,6 +204,31 @@ Streamlit Cloud의 **Secrets** 기능 사용:
   - 실시간 자동 갱신
   - 단일 비밀번호 로그인
   - 모든 분석/리포트 기능 유지
+
+---
+
+## 🔤 한글 폰트 문제 해결
+
+### PDF/Excel에서 한글이 네모 박스(□□□)로 표시되는 경우:
+
+**원인**: Streamlit Cloud에 한글 폰트가 없음
+
+**해결**: `packages.txt` 파일이 자동으로 한글 폰트를 설치합니다!
+
+### packages.txt 내용:
+```
+fonts-noto-cjk
+fonts-nanum
+```
+
+### 확인 방법:
+1. GitHub 저장소에 `packages.txt` 파일이 있는지 확인
+2. Streamlit Cloud 재배포
+3. PDF/Excel 다운로드하여 한글 확인
+
+### 여전히 문제가 있다면:
+- Streamlit Cloud 로그 확인
+- 앱 재시작 (Settings → Reboot app)
 
 ---
 

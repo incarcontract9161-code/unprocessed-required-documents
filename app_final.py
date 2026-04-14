@@ -165,15 +165,30 @@ def get_ledger_targets(df, months):
 # ==========================================
 @st.cache_resource
 def register_korean_font():
-    for name, path in [
-        ("Malgun", r"C:\Windows\Fonts\malgun.ttf"),
-        ("NotoSansKR", "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf"),
+    """한글 폰트 등록 - Streamlit Cloud 환경 최적화"""
+    
+    # Streamlit Cloud에서 packages.txt로 설치한 폰트 경로들
+    font_candidates = [
+        ("NotoSansKR", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        ("NotoSansKR", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
         ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),
-    ]:
+        ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
+        # Windows (로컬 테스트용)
+        ("Malgun", r"C:\Windows\Fonts\malgun.ttf"),
+        # 기타 Linux 경로
+        ("DejaVu", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    
+    for name, path in font_candidates:
         try:
-            pdfmetrics.registerFont(TTFont(name, path)); return name
+            if os.path.exists(path):
+                pdfmetrics.registerFont(TTFont(name, path))
+                return name
         except Exception:
             continue
+    
+    # 폰트를 찾을 수 없을 때 경고
+    st.warning("⚠️ 한글 폰트를 찾을 수 없습니다. PDF/Excel에서 한글이 깨질 수 있습니다. GitHub에 packages.txt 파일이 있는지 확인하세요.")
     return "Helvetica"
 
 HDR_CLR, ALT_CLR, SUB_CLR = "#4472C4", "#EEF3FB", "#D9E1F2"
