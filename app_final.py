@@ -42,7 +42,8 @@ PRECAUTION_TEXT_COVER = (
     "대상 건은 모집질서 위반 및 특정 리스크에 준하여 관리됩니다.\n"
     "신계약 리스크 점검 강화, 회사 지원금 및 특인 제한 등 불이익이 발생할 수 있습니다."
 )
-PRECAUTION_TEXT_SHEET = "본인은 위 내용을 안내받았음을 확인합니다."
+PRECAUTION_TEXT_SHEET = "영업가족별 미처리현황 및 유의사항에 대한 안내받았음을 확인합니다."
+SIGNATURE_CONFIRMATION_TEXT = "영업가족에게 안내하였음을 확인합니다."
 
 # 필수 서류 상세 안내 표 데이터
 REQUIRED_DOCS_TABLE = [
@@ -402,13 +403,12 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             ])
                 E.append(_tbl(td,[130,50,45,45,45,45],fn, align="LEFT"))
                 E.append(Spacer(1,4))
-                E.append(Paragraph(PRECAUTION_TEXT_COVER, notice_left))
-                E.append(Spacer(1,4))
-                E.append(Paragraph(PRECAUTION_TEXT_SHEET, notice_left))
-                E.append(Spacer(1,8))
         E += [Paragraph("【필수 서류 상세 안내】", st_["section"]),
               _tbl(REQUIRED_DOCS_TABLE, [12, 60, 90, 198], fn, header_rows=1, align="LEFT"), Spacer(1,8),
               Paragraph(GUIDANCE_TEXT, notice_left), Spacer(1,8),
+              Paragraph(PRECAUTION_TEXT_COVER, notice_left), Spacer(1,4),
+              Paragraph(PRECAUTION_TEXT_SHEET, notice_left), Spacer(1,4),
+              Paragraph(SIGNATURE_CONFIRMATION_TEXT, notice_left), Spacer(1,8),
               Paragraph("작성일: _______________", center_date_style), Spacer(1,4),
               _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,120), PageBreak()]
         for _, fam in grp_df.drop_duplicates("영업가족").iterrows():
@@ -431,9 +431,6 @@ def ledger_pdf(families_by_dept, period_text, df_src):
                 ])
                 E.append(_tbl(td2,[130,50,45,45,45,45],fn, align="LEFT"))
                 E.append(Spacer(1,4))
-                E.append(Paragraph(PRECAUTION_TEXT_COVER, notice_left))
-                E.append(Spacer(1,4))
-                E.append(Paragraph(PRECAUTION_TEXT_SHEET, notice_left))
             else:
                 E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
@@ -442,6 +439,9 @@ def ledger_pdf(families_by_dept, period_text, df_src):
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
                   _tbl(REQUIRED_DOCS_TABLE, [12, 60, 90, 198], fn, header_rows=1, align="LEFT"), Spacer(1,8),
                   Paragraph(GUIDANCE_TEXT, notice_left), Spacer(1,8),
+                  Paragraph(PRECAUTION_TEXT_COVER, notice_left), Spacer(1,4),
+                  Paragraph(PRECAUTION_TEXT_SHEET, notice_left), Spacer(1,4),
+                  Paragraph(SIGNATURE_CONFIRMATION_TEXT, notice_left), Spacer(1,8),
                   Paragraph("작성일: _______________", center_date_style)]
             sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]], colWidths=[120*1.4*3])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
@@ -531,6 +531,9 @@ def ledger_excel(families_by_dept, period_text, df_src):
         r += 1
         
         ws_c.cell(r,1,GUIDANCE_TEXT).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=45; r+=2
+        ws_c.cell(r,1,PRECAUTION_TEXT_COVER).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
+        ws_c.cell(r,1,PRECAUTION_TEXT_SHEET).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
+        ws_c.cell(r,1,SIGNATURE_CONFIRMATION_TEXT).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
         ws_c.cell(r,1,"작성일: _______________").font=bf; r+=2
         for i,sig in enumerate(["부문장 확인","총괄 확인","부서장 확인"]):
             ws_c.cell(r,i*2+1,sig).font=sig_f
@@ -598,6 +601,9 @@ def ledger_excel(families_by_dept, period_text, df_src):
                 r_f += 1
             r_f += 1
             ws_f.cell(r_f,1,GUIDANCE_TEXT).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=45; r_f+=2
+            ws_f.cell(r_f,1,PRECAUTION_TEXT_COVER).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=35; r_f+=2
+            ws_f.cell(r_f,1,PRECAUTION_TEXT_SHEET).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=35; r_f+=2
+            ws_f.cell(r_f,1,SIGNATURE_CONFIRMATION_TEXT).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=35; r_f+=2
             ws_f.cell(r_f,1,"작성일: _______________").font=bf; r_f+=1
             ws_f.cell(r_f,1,"영업가족대표 서명: ________________ (인)").font=sig_f
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
