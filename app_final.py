@@ -343,7 +343,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in fam_mon.iterrows(): td.append([r["영업가족"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td,[80,36,32,32,32,28],fn))
+                E.append(_tbl(td,[120,54,48,48,48,42],fn))
             E.append(Spacer(1,8))
         E += [Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
