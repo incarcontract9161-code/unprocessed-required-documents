@@ -268,7 +268,7 @@ def _sig_table(labels, fn, cw=120):
 # 7. 전체 계층 리포트 Excel
 # ==========================================
 def report_excel(df, months):
-    wb, ws = Workbook(), Workbook().active; ws.title="계층별_미처리현황"
+    wb = Workbook(); ws = wb.active; ws.title="계층별_미처리현황"
     tfn, hf, bf = "맑은 고딕", Font(name="맑은 고딕",size=9,bold=True,color="FFFFFF"), Font(name="맑은 고딕",size=9)
     bdr = Border(left=Side("thin"),right=Side("thin"),top=Side("thin"),bottom=Side("thin"))
     fills = {"부문계":PatternFill("solid",fgColor="1F3864"), "총괄계":PatternFill("solid",fgColor="2E75B6"),
@@ -332,13 +332,37 @@ def report_pdf(df, months):
         hdr=[["구분","부문","총괄","부서","영업가족","FA","비교","완판","총미스캔","대상건","미처리율"]]
         drows, sub_idx = [], []
         for i,(_,r) in enumerate(report.iterrows()):
-            drows.append([r["구분"],r["부문"],r["총괄"],r["부서"],r["영업가족"],r["FA"],r["비교"],r["완판"],r["총미스캔"],r["대상건"],f"{r['미처리율']:.1f}%"])
+            drows.append([
+                r["구분"],
+                r["부문"],
+                r["총괄"],
+                r["부서"],
+                r["영업가족"],
+                f"{int(r['FA']):,}",
+                f"{int(r['비교']):,}",
+                f"{int(r['완판']):,}",
+                f"{int(r['총미스캔']):,}",
+                f"{int(r['대상건']):,}",
+                f"{r['미처리율']:.1f}%"
+            ])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
         E.append(_tbl(hdr+drows,[24,32,32,32,45,18,18,18,26,22,26],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
-        mrows=[[r["월"],r["구분"],r["부문"],r["총괄"],r["부서"],r["FA"],r["비교"],r["완판"],r["총미스캔"],r["대상건"],f"{r['미처리율']:.1f}%"] for _,r in monthly.iterrows()]
+        mrows=[[
+            r["월"],
+            r["구분"],
+            r["부문"],
+            r["총괄"],
+            r["부서"],
+            f"{int(r['FA']):,}",
+            f"{int(r['비교']):,}",
+            f"{int(r['완판']):,}",
+            f"{int(r['총미스캔']):,}",
+            f"{int(r['대상건']):,}",
+            f"{r['미처리율']:.1f}%"
+        ] for _,r in monthly.iterrows()]
         msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
         E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[26,24,32,32,45,18,18,18,26,22,26],fn,sub_rows=msub))
     doc.build(E); buf.seek(0); return buf
@@ -368,7 +392,14 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             fam_mon["계"] = fam_mon[["FA","비교","완판"]].sum(axis=1); fam_mon = fam_mon[fam_mon["계"] > 0]
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
-                for _, r in fam_mon.iterrows(): td.append([r["영업가족"], r["월_피리어드"], int(r.FA), int(r.비교), int(r.완판), int(r["계"])])
+                for _, r in fam_mon.iterrows(): td.append([
+                r["영업가족"],
+                r["월_피리어드"],
+                f"{int(r.FA):,}",
+                f"{int(r.비교):,}",
+                f"{int(r.완판):,}",
+                f"{int(r['계']):,}"
+            ])
                 E.append(_tbl(td,[130,50,45,45,45,45],fn, align="LEFT"))
                 E.append(Spacer(1,4))
                 E.append(Paragraph(PRECAUTION_TEXT_COVER, notice_left))
@@ -390,7 +421,14 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             E.append(Paragraph("▶ 소속별 · 월별 · 양식별 미처리 건수", section_left))
             if not sosok.empty:
                 td2=[["소속","월","FA고지","비교설명","완전판매","계"]]
-                for _,r in sosok.iterrows(): td2.append([r["소속"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
+                for _,r in sosok.iterrows(): td2.append([
+                    r["소속"],
+                    r["월_피리어드"],
+                    f"{int(r.FA):,}",
+                    f"{int(r.비교):,}",
+                    f"{int(r.완판):,}",
+                    f"{int(r['계']):,}"
+                ])
                 E.append(_tbl(td2,[130,50,45,45,45,45],fn, align="LEFT"))
                 E.append(Spacer(1,4))
                 E.append(Paragraph(PRECAUTION_TEXT_COVER, notice_left))
@@ -399,7 +437,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             else:
                 E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
-            sum_d=[["FA고지","비교설명","완전판매","총계"],[str(int(fam["FA"])),str(int(fam["비교"])),str(int(fam["완판"])),str(int(fam["총미스캔"]))]]
+            sum_d=[["FA고지","비교설명","완전판매","총계"],[f"{int(fam["FA"]):,}",f"{int(fam["비교"]):,}",f"{int(fam["완판"]):,}",f"{int(fam["총미스캔"]):,}"]]
             E += [Paragraph("▶ 양식별 미처리 요약", section_left), _tbl(sum_d,[90,90,90,90],fn, align="LEFT"), Spacer(1,8),
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
                   _tbl(REQUIRED_DOCS_TABLE, [12, 60, 90, 198], fn, header_rows=1, align="LEFT"), Spacer(1,8),
