@@ -296,14 +296,15 @@ def report_excel(df, months):
         fnt  = fonts_wc.get(gbn, bf)
         for ci,v in enumerate(vals,1):
             c=ws.cell(ri,ci,v); c.font=fnt; c.border=bdr; c.alignment=Alignment(horizontal="center",vertical="center")
+            if isinstance(v,(int,float)): c.number_format = "#,##0"
             if fill: c.fill=fill
         ri += 1
 
-    ws2 = wb.create_sheet("월별_계층집계")
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
-        ws2.merge_cells("A1:K1"); ws2["A1"] = f"월별 계층 미처리 집계  ·  기간: {period_str}  ·  발급: {today}"
-        ws2["A1"].font = Font(name=tfn,size=12,bold=True); ws2["A1"].alignment=Alignment(horizontal="center"); ws2.row_dimensions[1].height=22
+        ws2 = wb.create_sheet("월별_계층집계")
+        ws2.merge_cells("A1:K1"); ws2["A1"] = f"월별 계층 미처리 집계  ·  기간: {period_str}  ·  발급일: {today}"
+        ws2["A1"].font = Font(name=tfn,size=12,bold=True); ws2["A1"].alignment=Alignment(horizontal="center"); ws2.row_dimensions[1].height = 22
         mhdr, mcws = ["월","구분","부문","총괄","부서","FA고지","비교설명","완전판매","총미스캔","대상건","미처리율"], [18,14,20,20,24,12,12,12,14,12,16]
         for ci,(h,w) in enumerate(zip(mhdr,mcws),1):
             c=ws2.cell(2,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center"); ws2.column_dimensions[get_column_letter(ci)].width=w
@@ -313,6 +314,7 @@ def report_excel(df, months):
             fill2=fills.get(gbn, fills["영업가족_alt"] if ri2%2==0 else None); fnt2=fonts_wc.get(gbn,bf)
             for ci,v in enumerate(vals2,1):
                 c=ws2.cell(ri2,ci,v); c.font=fnt2; c.border=bdr; c.alignment=Alignment(horizontal="center")
+                if isinstance(v,(int,float)): c.number_format = "#,##0"
                 if fill2: c.fill=fill2
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
@@ -430,6 +432,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
         for _,fam in grp.drop_duplicates("영업가족").iterrows():
             for ci,v in enumerate([dept,fam["영업가족"],int(fam["FA"]),int(fam["비교"]),int(fam["완판"]),int(fam["총미스캔"])],1):
                 c=ws0.cell(ir,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
+                if isinstance(v,(int,float)): c.number_format = "#,##0"
                 if ir%2==0: c.fill=alt_fill
             ir+=1
     for ci,w in enumerate([22,25,13,13,13,14],1): ws0.column_dimensions[get_column_letter(ci)].width=w
@@ -450,8 +453,10 @@ def ledger_excel(families_by_dept, period_text, df_src):
             for i,(_,rv) in enumerate(fam_mon.iterrows()):
                 row_v=[rv["영업가족"],rv["월_피리어드"],int(rv.FA),int(rv.비교),int(rv.완판),int(rv["계"])]
                 af=alt_fill if i%2==1 else None
-                for ci,v in enumerate(row_v,1): c=ws_c.cell(r+1+i,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
-                if af: c.fill=af
+                for ci,v in enumerate(row_v,1):
+                    c=ws_c.cell(r+1+i,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
+                    if isinstance(v,(int,float)): c.number_format = "#,##0"
+                    if af: c.fill=af
             r+=len(fam_mon)+2
         ws_c.cell(r,1,PRECAUTION_TEXT_COVER).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
         ws_c.cell(r,1,PRECAUTION_TEXT_SHEET).font=nf; ws_c.cell(r,1).alignment=Alignment(wrapText=True); ws_c.row_dimensions[r].height=35; r+=2
@@ -507,14 +512,18 @@ def ledger_excel(families_by_dept, period_text, df_src):
             if not sosok.empty:
                 for i,(_,sr) in enumerate(sosok.iterrows()):
                     rv2=[sr["소속"],sr["월_피리어드"],int(sr.FA),int(sr.비교),int(sr.완판),int(sr["계"])]; af=alt_fill if i%2==1 else None
-                    for ci,v in enumerate(rv2,1): c=ws_f.cell(r_f+1+i,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
-                    if af: c.fill=af
+                    for ci,v in enumerate(rv2,1):
+                        c=ws_f.cell(r_f+1+i,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
+                        if isinstance(v,(int,float)): c.number_format = "#,##0"
+                        if af: c.fill=af
                 r_f += len(sosok) + 2
             else:
                 r_f += 1
             ws_f.cell(r_f,1,"▶ 양식별 요약").font=Font(name=tfn,size=10,bold=True); r_f+=1
             for ci,h in enumerate(["FA고지","비교설명","완전판매","총계"],1): c=ws_f.cell(r_f,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center")
-            for ci,v in enumerate([int(fam["FA"]),int(fam["비교"]),int(fam["완판"]),int(fam["총미스캔"])],1): c=ws_f.cell(r_f+1,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
+            for ci,v in enumerate([int(fam["FA"]),int(fam["비교"]),int(fam["완판"]),int(fam["총미스캔"])],1):
+                c=ws_f.cell(r_f+1,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
+                if isinstance(v,(int,float)): c.number_format = "#,##0"
             r_f+=3
             # 미처리 건수 표 하단 유의사항
             ws_f.cell(r_f,1,PRECAUTION_TEXT_COVER).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=30; r_f+=2
@@ -649,7 +658,19 @@ def dashboard_page():
         agg = agg.sort_values("총_미스캔", ascending=False).reset_index(drop=True); agg.insert(0,"순위",range(1,len(agg)+1))
         if agg.empty: st.info("조건에 맞는 데이터가 없습니다.")
         else:
-            st.dataframe(agg[["순위","조직","총_미스캔","미처리율","FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]], use_container_width=True, hide_index=True)
+            st.dataframe(
+                agg[["순위","조직","총_미스캔","미처리율","FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]]
+                .style.format({
+                    "순위": "{:,}",
+                    "총_미스캔": "{:,}",
+                    "미처리율": "{:.1f}%",
+                    "FA고지_미스캔": "{:,}",
+                    "비교설명_미스캔": "{:,}",
+                    "완전판매_미스캔": "{:,}"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
             top_n = st.slider("차트 표시 개수", 5, 30, 30); top = agg.head(top_n)
             c1, c2 = st.columns(2)
             with c1:
@@ -693,7 +714,15 @@ def dashboard_page():
                 fig_tree = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미처리 분포", color_continuous_scale="RdYlGn_r")
                 fig_tree.update_layout(height=500); st.plotly_chart(fig_tree, use_container_width=True)
             st.markdown(f"#### 📊 {map_level}별 상세 데이터")
-            st.dataframe(map_agg.rename(columns={map_level:"조직"}), use_container_width=True, hide_index=True)
+            st.dataframe(
+                map_agg.rename(columns={map_level:"조직"}).style.format({
+                    "미스캔": "{:,}",
+                    "대상건": "{:,}",
+                    "미처리율": "{:.1f}%"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
 
     # ── TAB 3 : 계층 리포트 ─────────────────────────
     with tab_report:
@@ -706,8 +735,20 @@ def dashboard_page():
                 elif row["구분"]=="총괄계": return ["background-color:#2E75B6;color:white;font-weight:bold"]*len(row)
                 elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
                 return [""]*len(row)
-            disp_df = report_df.copy(); disp_df["미처리율"] = disp_df["미처리율"].apply(lambda x: f"{x:.1f}%")
-            st.dataframe(disp_df.style.apply(style_row, axis=1), use_container_width=True, hide_index=True, height=500)
+            disp_df = report_df.copy()
+            st.dataframe(
+                disp_df.style.apply(style_row, axis=1).format({
+                    "FA": "{:,}",
+                    "비교": "{:,}",
+                    "완판": "{:,}",
+                    "총미스캔": "{:,}",
+                    "대상건": "{:,}",
+                    "미처리율": "{:.1f}%"
+                }),
+                use_container_width=True,
+                hide_index=True,
+                height=500
+            )
             st.divider()
             cr1, cr2 = st.columns(2)
             with cr1:
@@ -734,7 +775,17 @@ def dashboard_page():
         else:
             prev = [{"부문":r["부문"],"총괄":r["총괄"],"부서":dept,"영업가족":r["영업가족"],"FA":int(r["FA"]),"비교":int(r["비교"]),"완판":int(r["완판"]),"총미스캔":int(r["총미스캔"])} for dept, grp in targets.items() for _, r in grp.iterrows()]
             prev_df = pd.DataFrame(prev)
-            st.markdown(f"#### 📌 선정 대상 — 총 **{len(prev_df)}** 개 영업가족"); st.dataframe(prev_df, use_container_width=True, hide_index=True)
+            st.markdown(f"#### 📌 선정 대상 — 총 **{len(prev_df)}** 개 영업가족")
+            st.dataframe(
+                prev_df.style.format({
+                    "FA": "{:,}",
+                    "비교": "{:,}",
+                    "완판": "{:,}",
+                    "총미스캔": "{:,}"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
             all_depts = sorted(targets.keys())
             sel_depts = st.multiselect("출력 부서 (미선택 시 전체)", all_depts, default=all_depts, key="lg_sel_dept")
             if not sel_depts: st.warning("⚠️ 출력할 부서를 1개 이상 선택하세요.")
