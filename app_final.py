@@ -224,10 +224,25 @@ def _pdf_styles(fn):
 def _tbl(data, cw, fn, header_rows=1, sub_rows=None):
     if not data or len(data) < 1: return Spacer(1,0)
     cw_scaled = [w * 1.4 for w in cw]
-    t = Table(data, colWidths=cw_scaled, repeatRows=header_rows)
+    S = getSampleStyleSheet()
+    cell_style = ParagraphStyle(
+        "tbl_cell",
+        parent=S["Normal"],
+        fontName=fn,
+        fontSize=7.5,
+        leading=9,
+        alignment=1,
+        wordWrap="CJK"
+    )
+    wrapped_data = [
+        [Paragraph(str(cell), cell_style) if not isinstance(cell, Paragraph) else cell for cell in row]
+        for row in data
+    ]
+    t = Table(wrapped_data, colWidths=cw_scaled, repeatRows=header_rows)
     cmds = [
         ("FONTNAME", (0,0),(-1,-1), fn), ("FONTSIZE", (0,0),(-1,-1), 7.5),
         ("ALIGN", (0,0),(-1,-1), "CENTER"), ("VALIGN", (0,0),(-1,-1), "MIDDLE"),
+        ("WORDWRAP", (0,0),(-1,-1), "CJK"),
         ("GRID", (0,0),(-1,-1), 0.4, colors.grey),
         ("LEFTPADDING", (0,0),(-1,-1), 4), ("RIGHTPADDING", (0,0),(-1,-1), 4),
         ("TOPPADDING", (0,0),(-1,-1), 4), ("BOTTOMPADDING",(0,0),(-1,-1), 4),
@@ -329,7 +344,7 @@ def report_pdf(df, months):
 # ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
     today = datetime.now().strftime("%Y년 %m월 %d일"); E = []
     for dept_name, grp_df in families_by_dept.items():
         sec, tg = grp_df.iloc[0]["부문"], grp_df.iloc[0]["총괄"]
@@ -343,7 +358,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in fam_mon.iterrows(): td.append([r["영업가족"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td,[120,54,48,48,48,42],fn))
+                E.append(_tbl(td,[140,55,55,55,55,55],fn))
             E.append(Spacer(1,8))
         E += [Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
@@ -363,7 +378,7 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not sosok.empty:
                 td2=[["소속","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in sosok.iterrows(): td2.append([r["소속"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td2,[120,54,48,48,48,42],fn))
+                E.append(_tbl(td2,[140,55,55,55,55,55],fn))
             else: E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
             sum_d=[["FA고지","비교설명","완전판매","총계"],[str(int(fam["FA"])),str(int(fam["비교"])),str(int(fam["완판"])),str(int(fam["총미스캔"]))]]
