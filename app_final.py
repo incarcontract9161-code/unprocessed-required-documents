@@ -29,7 +29,7 @@ st.set_page_config(page_title="보험 서류 스캔 관리 대시보드", layout
 EXCEL_FILE = "insurance_data.xlsx"
 
 # Render 배포 시 환경변수(APP_PASSWORD) 사용, 로컬 테스트 시 기본값 적용
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar2026")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
 
 GUIDANCE_TEXT = (
     "【책임판매 필수서류 안내】\n"
@@ -39,7 +39,7 @@ GUIDANCE_TEXT = (
 )
 PRECAUTION_TEXT_COVER = (
     "【미처리 시 유의사항】\n"
-    "대상 건은 모집질서 위반 및 특정 리스크에 준하여 관리됩니다.\n"
+    "미결 조직은 모집질서 위반 및 특정 리스크에 준하여 관리됩니다.\n"
     "신계약 리스크 점검 강화, 회사 지원금 및 특인 제한 등 불이익이 발생할 수 있습니다."
 )
 PRECAUTION_TEXT_CONFIRM = "영업가족별 미처리 현황 및 유의사항에 대하여 인지하였으며,"
