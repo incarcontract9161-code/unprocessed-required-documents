@@ -349,31 +349,35 @@ def ledger_pdf(families_by_dept, period_text, df_src):
     doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
     today = datetime.now().strftime("%Y년 %m월 %d일"); E = []
     center_date_style = ParagraphStyle("CenterDate", parent=st_["date"], alignment=1)
+    title_left = ParagraphStyle("TitleLeft", parent=st_["title"], alignment=0)
+    indent_style = ParagraphStyle("IndentSub", parent=st_["sub"], leftIndent=8, alignment=0, spaceAfter=2)
+    date_left = ParagraphStyle("DateLeft", parent=st_["date"], alignment=0)
+    section_left = ParagraphStyle("SectionLeft", parent=st_["section"], alignment=0)
     for dept_name, grp_df in families_by_dept.items():
         sec, tg = grp_df.iloc[0]["부문"], grp_df.iloc[0]["총괄"]
-        E += [Paragraph("신계약 필수서류 미처리 확인서", st_["title"]), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
-              Paragraph(f"부서: {sec}  > {tg}  >  <b>{dept_name}</b>", st_["sub"]), Paragraph(f"적용기간: {period_text}", st_["date"]), Spacer(1,6)]
+        E += [Paragraph("신계약 필수서류 미처리 확인서", title_left), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
+              Paragraph(f"부서: {sec}  > {tg}  >  <b>{dept_name}</b>", indent_style), Paragraph(f"적용기간: {period_text}", date_left), Spacer(1,6)]
         dept_src = df_src[df_src["부서"]==dept_name]
         if not dept_src.empty:
-            E.append(Paragraph("▶ 영업가족별 · 월별 · 양식별 미처리 현황", st_["section"]))
+            E.append(Paragraph("▶ 영업가족별 · 월별 · 양식별 미처리 현황", section_left))
             fam_mon = dept_src.groupby(["영업가족","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
             fam_mon["계"] = fam_mon[["FA","비교","완판"]].sum(axis=1); fam_mon = fam_mon[fam_mon["계"] > 0]
             if not fam_mon.empty:
                 td=[["영업가족","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in fam_mon.iterrows(): td.append([r["영업가족"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td,[140,55,55,55,55,55],fn, align="LEFT"))
+                E.append(_tbl(td,[130,50,45,45,45,45],fn, align="LEFT"))
             E.append(Spacer(1,8))
         E += [Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
               Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
               Paragraph("【필수 서류 상세 안내】", st_["section"]),
-              _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+              _tbl(REQUIRED_DOCS_TABLE, [12, 45, 65, 90], fn, header_rows=1, align="LEFT"), Spacer(1,8),
               Paragraph("작성일: _______________", center_date_style), Spacer(1,4),
               _sig_table(["부문장 확인","총괄 확인","부서장 확인"],fn,140), PageBreak()]
         for _, fam in grp_df.drop_duplicates("영업가족").iterrows():
             fam_name = fam["영업가족"]
-            E += [Paragraph("신계약 필수서류 미처리 확인서", st_["title"]), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
-                  Paragraph(f"소속: {sec}  > {tg}  > {dept_name}  >  <b>{fam_name}</b>",st_["sub"]), Paragraph(f"적용기간: {period_text}", st_["date"]), Spacer(1,6)]
+            E += [Paragraph("신계약 필수서류 미처리 확인서", title_left), HRFlowable(width="100%",thickness=1.5,color=colors.HexColor(HDR_CLR)), Spacer(1,4),
+                  Paragraph(f"소속: {sec}  > {tg}  > {dept_name}  >  <b>{fam_name}</b>", indent_style), Paragraph(f"적용기간: {period_text}", date_left), Spacer(1,6)]
             fam_src = df_src[(df_src["영업가족"]==fam_name) & df_src["소속"].notna()]
             sosok = fam_src.groupby(["소속","월_피리어드"]).agg(FA=("FA고지_c",_miss),비교=("비교설명_c",_miss),완판=("완전판매_c",_miss_cs)).reset_index()
             sosok["계"] = sosok[["FA","비교","완판"]].sum(axis=1); sosok = sosok[sosok["계"] > 0]
@@ -381,16 +385,16 @@ def ledger_pdf(families_by_dept, period_text, df_src):
             if not sosok.empty:
                 td2=[["소속","월","FA고지","비교설명","완전판매","계"]]
                 for _,r in sosok.iterrows(): td2.append([r["소속"],r["월_피리어드"],int(r.FA),int(r.비교),int(r.완판),int(r["계"])])
-                E.append(_tbl(td2,[140,55,55,55,55,55],fn, align="LEFT"))
+                E.append(_tbl(td2,[130,50,45,45,45,45],fn, align="LEFT"))
             else: E.append(Paragraph("(해당 데이터 없음)", st_["body"]))
             E.append(Spacer(1,6))
             sum_d=[["FA고지","비교설명","완전판매","총계"],[str(int(fam["FA"])),str(int(fam["비교"])),str(int(fam["완판"])),str(int(fam["총미스캔"]))]]
-            E += [Paragraph("▶ 양식별 미처리 요약", st_["section"]), _tbl(sum_d,[120,120,120,120],fn, align="LEFT"), Spacer(1,8),
+            E += [Paragraph("▶ 양식별 미처리 요약", section_left), _tbl(sum_d,[90,90,90,90],fn, align="LEFT"), Spacer(1,8),
                   Paragraph(GUIDANCE_TEXT, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_COVER, st_["notice"]), Spacer(1,4),
                   Paragraph(PRECAUTION_TEXT_SHEET, st_["notice"]), Spacer(1,8),
                   Paragraph("【필수 서류 상세 안내】", st_["section"]),
-                  _tbl(REQUIRED_DOCS_TABLE, [12, 50, 70, 95], fn, header_rows=1, align="LEFT"), Spacer(1,8),
+                  _tbl(REQUIRED_DOCS_TABLE, [12, 45, 65, 90], fn, header_rows=1, align="LEFT"), Spacer(1,8),
                   Paragraph("작성일: _______________", center_date_style)]
             sig2=Table([[f"영업가족대표 서명: ____________________ (인)"]],colWidths=[260])
             sig2.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"LEFT"),("FONTNAME",(0,0),(-1,-1),fn),("FONTSIZE",(0,0),(-1,-1),9.5),
