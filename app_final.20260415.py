@@ -320,6 +320,7 @@ def report_excel(df, months):
     fonts_wc = {"부문계":Font(name=tfn,size=9,bold=True,color="FFFFFF"), "총괄계":Font(name=tfn,size=9,bold=True,color="FFFFFF"),
                 "부서계":Font(name=tfn,size=9,bold=True)}
     h_fill = PatternFill("solid",fgColor="4472C4")
+    alt_fill = PatternFill("solid",fgColor="EEF3FB")
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     
     ws.merge_cells("A1:K1"); ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
