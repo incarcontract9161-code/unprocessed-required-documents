@@ -450,7 +450,10 @@ def report_pdf(df, months):
         for _, pr in pivot.iterrows():
             values.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
         col_count = len(pivot.columns)
-        cw = [24 if i < 4 else max(12, int(320/col_count)) for i in range(col_count)]
+        fixed = [24, 24, 30, 40]
+        month_cols = max(1, col_count - 4)
+        remaining = max(12, int((542 - sum(fixed)) / month_cols))
+        cw = fixed + [remaining] * month_cols
         E.append(_tbl(hdr + values, cw, fn))
     doc.build(E); buf.seek(0); return buf
 
@@ -510,8 +513,10 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         rows = []
         for _, pr in pivot.iterrows():
             rows.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
-        num_month_cols = max(1, len(headers) - 4)
-        widths = [75, 75, 80, 90] + [max(35, int(360 / num_month_cols))] * num_month_cols
+        fixed = [30, 30, 35, 45]
+        month_cols = max(1, len(headers) - 4)
+        remaining = max(12, int((542 - sum(fixed)) / month_cols))
+        widths = fixed + [remaining] * month_cols
         E.append(_tbl([headers] + rows, widths, fn))
 
     doc.build(E); buf.seek(0); return buf
