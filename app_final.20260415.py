@@ -938,7 +938,7 @@ def dashboard_page():
             if not pivot_df.empty:
                 st.markdown("### 📌 월별 피벗형 계층 리포트")
                 st.dataframe(
-                    pivot_df.style.format({col: "{:,}" for col in pivot_df.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_df.columns if col.endswith("_미처리율")}),
+                    pivot_df.style.format({col: "{:,.0f}" for col in pivot_df.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_df.columns if col.endswith("_미처리율")}),
                     use_container_width=True,
                     hide_index=True,
                     height=420
