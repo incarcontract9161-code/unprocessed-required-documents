@@ -10,7 +10,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, PageBreak, HRFlowable)
+                                TableStyle, Image as RLImage, PageBreak, HRFlowable)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -300,6 +300,17 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
         if sub_rows and i in sub_rows: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#E9EEF8")))
     t.setStyle(TableStyle(cmds)); return t
 
+def _fig_to_image(fig, max_width=1000, height=360):
+    img_buf = io.BytesIO()
+    img_buf.write(fig.to_image(format="png", width=max_width, height=height, scale=2))
+    img_buf.seek(0)
+    img = RLImage(img_buf)
+    desired_width = min(max_width, 760)
+    img.drawWidth = desired_width
+    img.drawHeight = height * (desired_width / max_width)
+    return img
+
+
 def _sig_table(labels, fn, cw=120):
     t = Table([labels,["____________________"]*len(labels),["(인)"]*len(labels)], colWidths=[cw*1.4]*len(labels))
     t.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("FONTNAME",(0,0),(-1,-1),fn),
@@ -374,9 +385,13 @@ def report_excel(df, months):
             for ri3, (_, pr) in enumerate(pivot.iterrows(), 3):
                 for ci, h in enumerate(headers3, 1):
                     val = pr[h]
-                    c = ws3.cell(ri3, ci, val)
+                    if isinstance(val, (int, float)) and h.endswith("_미처리율"):
+                        c = ws3.cell(ri3, ci, float(val) / 100)
+                        c.number_format = "0.0%"
+                    else:
+                        c = ws3.cell(ri3, ci, val)
                     c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="center")
-                    if isinstance(val,(int,float)): c.number_format = "#,##0"
+                    if isinstance(val,(int,float)) and not h.endswith("_미처리율"): c.number_format = "#,##0"
                     if ri3 % 2 == 0: c.fill = alt_fill
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
@@ -385,7 +400,7 @@ def report_excel(df, months):
 # ==========================================
 def report_pdf(df, months):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     E = [Paragraph("서류 미처리 현황 계층별 집계", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,6)]
     report = build_hierarchy_report(df, months)
@@ -408,7 +423,7 @@ def report_pdf(df, months):
                 f"{r['미처리율']:.1f}%"
             ])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[24,32,32,32,45,18,18,18,26,22,26],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr+drows,[30,40,40,40,55,22,22,22,30,28,30],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
@@ -426,7 +441,7 @@ def report_pdf(df, months):
             f"{r['미처리율']:.1f}%"
         ] for _,r in monthly.iterrows()]
         msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
-        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[26,24,32,32,45,18,18,18,26,22,26],fn,sub_rows=msub))
+        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[30,30,40,40,55,22,22,22,30,28,30],fn,sub_rows=msub))
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 집계", st_["section"]))
@@ -435,7 +450,7 @@ def report_pdf(df, months):
         for _, pr in pivot.iterrows():
             values.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
         col_count = len(pivot.columns)
-        cw = [24 if i < 4 else max(10, int(240/col_count)) for i in range(col_count)]
+        cw = [24 if i < 4 else max(12, int(320/col_count)) for i in range(col_count)]
         E.append(_tbl(hdr + values, cw, fn))
     doc.build(E); buf.seek(0); return buf
 
@@ -465,6 +480,12 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         hdr = [[agg_group, "총미스캔", "미처리율", "FA", "비교", "완판", "대상건"]]
         rows = [[r[agg_group], f"{int(r['총미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA']):,}", f"{int(r['비교']):,}", f"{int(r['완판']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
         E.append(_tbl(hdr + rows, [40, 24, 20, 20, 20, 20, 20], fn)); E.append(Spacer(1,8))
+        try:
+            fig_bar = px.bar(agg, x=agg_group, y="총미스캔", text="총미스캔", color="총미스캔", color_continuous_scale="Reds")
+            fig_bar.update_layout(title_text=f"{agg_group}별 상위 {top_n} 미처리 현황", xaxis_tickangle=-45, margin=dict(l=10,r=10,t=35,b=10), height=360)
+            E.append(_fig_to_image(fig_bar, max_width=1000, height=360)); E.append(Spacer(1,8))
+        except Exception:
+            pass
 
     map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔","sum"), 대상건=("증권번호","count")).reset_index()
     map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
@@ -474,6 +495,12 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         hdr = [[map_level, "미스캔", "미처리율", "대상건"]]
         rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
         E.append(_tbl(hdr + rows, [50, 24, 20, 24], fn)); E.append(Spacer(1,8))
+        try:
+            fig_map = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미스캔 분포", color_continuous_scale="RdYlGn_r")
+            fig_map.update_layout(margin=dict(l=10,r=10,t=35,b=10), height=360)
+            E.append(_fig_to_image(fig_map, max_width=1000, height=360)); E.append(Spacer(1,8))
+        except Exception:
+            pass
 
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
