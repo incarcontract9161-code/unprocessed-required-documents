@@ -302,10 +302,10 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
 
 def _fig_to_image(fig, max_width=1000, height=360):
     img_buf = io.BytesIO()
-    img_buf.write(fig.to_image(format="png", width=max_width, height=height, scale=2))
+    fig.write_image(img_buf, format="png", width=max_width, height=height, scale=2)
     img_buf.seek(0)
     img = RLImage(img_buf)
-    desired_width = min(max_width, 760)
+    desired_width = min(max_width, 820)
     img.drawWidth = desired_width
     img.drawHeight = height * (desired_width / max_width)
     return img
@@ -423,7 +423,7 @@ def report_pdf(df, months):
                 f"{r['미처리율']:.1f}%"
             ])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[30,40,40,40,55,22,22,22,30,28,30],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr+drows,[40,52,52,52,72,29,29,29,39,36,39],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
@@ -441,7 +441,7 @@ def report_pdf(df, months):
             f"{r['미처리율']:.1f}%"
         ] for _,r in monthly.iterrows()]
         msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
-        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[30,30,40,40,55,22,22,22,30,28,30],fn,sub_rows=msub))
+        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[39,39,52,52,72,29,29,29,39,36,39],fn,sub_rows=msub))
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 집계", st_["section"]))
@@ -469,7 +469,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
     rate = round((tot / len(df_sel) * 100), 1) if len(df_sel) else 0.0
     E.append(Paragraph("▶ 주요 KPI", st_["section"]))
     summary = [["총 계약건수", f"{len(df_sel):,}"], ["총 미처리건수", f"{tot:,}"], ["미처리율", f"{rate:.1f}%"], ["FA/비교/완판", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"]]
-    E.append(_tbl([[s[0], s[1]] for s in summary], [80, 80], fn, header_rows=0, align="LEFT")); E.append(Spacer(1,8))
+    E.append(_tbl([[s[0], s[1]] for s in summary], [90, 150], fn, header_rows=0, align="LEFT")); E.append(Spacer(1,8))
 
     agg = df_sel.groupby(agg_group).agg(FA=("FA_miss","sum"), 비교=("비교_miss","sum"), 완판=("완판_miss","sum"), 대상건=("증권번호","count")).reset_index()
     agg["총미스캔"] = agg[["FA","비교","완판"]].sum(axis=1)
@@ -479,11 +479,12 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         E.append(Paragraph(f"▶ {agg_group}별 상위 {top_n} 미처리 현황", st_["section"]))
         hdr = [[agg_group, "총미스캔", "미처리율", "FA", "비교", "완판", "대상건"]]
         rows = [[r[agg_group], f"{int(r['총미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA']):,}", f"{int(r['비교']):,}", f"{int(r['완판']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
-        E.append(_tbl(hdr + rows, [40, 24, 20, 20, 20, 20, 20], fn)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr + rows, [90, 50, 42, 42, 42, 42, 42], fn)); E.append(Spacer(1,8))
         try:
             fig_bar = px.bar(agg, x=agg_group, y="총미스캔", text="총미스캔", color="총미스캔", color_continuous_scale="Reds")
-            fig_bar.update_layout(title_text=f"{agg_group}별 상위 {top_n} 미처리 현황", xaxis_tickangle=-45, margin=dict(l=10,r=10,t=35,b=10), height=360)
-            E.append(_fig_to_image(fig_bar, max_width=1000, height=360)); E.append(Spacer(1,8))
+            fig_bar.update_layout(title_text=f"{agg_group}별 상위 {top_n} 미처리 현황", xaxis_tickangle=-45, margin=dict(l=20,r=20,t=40,b=20), width=1000, height=340)
+            fig_bar.update_traces(textposition='outside')
+            E.append(_fig_to_image(fig_bar, max_width=1000, height=340)); E.append(Spacer(1,10))
         except Exception:
             pass
 
@@ -494,11 +495,11 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         E.append(Paragraph(f"▶ {map_level}별 미스캀 분포 요약", st_["section"]))
         hdr = [[map_level, "미스캔", "미처리율", "대상건"]]
         rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
-        E.append(_tbl(hdr + rows, [50, 24, 20, 24], fn)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr + rows, [100, 55, 55, 55], fn)); E.append(Spacer(1,8))
         try:
-            fig_map = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미스캔 분포", color_continuous_scale="RdYlGn_r")
-            fig_map.update_layout(margin=dict(l=10,r=10,t=35,b=10), height=360)
-            E.append(_fig_to_image(fig_map, max_width=1000, height=360)); E.append(Spacer(1,8))
+            fig_map = px.treemap(map_agg, path=[map_level], values="미스캀", color="미처리율", title=f"{map_level}별 미스캀 분포", color_continuous_scale="RdYlGn_r")
+            fig_map.update_layout(margin=dict(l=20,r=20,t=35,b=20), width=1000, height=340)
+            E.append(_fig_to_image(fig_map, max_width=1000, height=340)); E.append(Spacer(1,10))
         except Exception:
             pass
 
@@ -509,7 +510,8 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
         rows = []
         for _, pr in pivot.iterrows():
             rows.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
-        widths = [20 if i < 4 else max(10, int(220/len(headers))) for i in range(len(headers))]
+        num_month_cols = max(1, len(headers) - 4)
+        widths = [75, 75, 80, 90] + [max(35, int(360 / num_month_cols))] * num_month_cols
         E.append(_tbl([headers] + rows, widths, fn))
 
     doc.build(E); buf.seek(0); return buf
