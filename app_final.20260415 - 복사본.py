@@ -301,14 +301,27 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
     t.setStyle(TableStyle(cmds)); return t
 
 def _fig_to_image(fig, max_width=1000, height=360):
-    img_buf = io.BytesIO()
-    fig.write_image(img_buf, format="png", width=max_width, height=height, scale=2)
-    img_buf.seek(0)
-    img = RLImage(img_buf)
-    desired_width = min(max_width, 820)
-    img.drawWidth = desired_width
-    img.drawHeight = height * (desired_width / max_width)
-    return img
+    try:
+        img_buf = io.BytesIO()
+        fig.write_image(img_buf, format="png", width=max_width, height=height, scale=2)
+        img_buf.seek(0)
+        img = RLImage(img_buf)
+        desired_width = min(max_width, 820)
+        img.drawWidth = desired_width
+        img.drawHeight = height * (desired_width / max_width)
+        return img, None
+    except Exception as e:
+        return None, str(e)
+
+
+def _append_pdf_figure(E, fig, st_, max_width=1000, height=360):
+    img, err = _fig_to_image(fig, max_width=max_width, height=height)
+    if img is not None:
+        E.append(img)
+        E.append(Spacer(1,10))
+        return
+    E.append(Paragraph(f"차트 이미지를 생성하지 못했습니다: {err}", st_["notice"]))
+    E.append(Spacer(1,6))
 
 
 def _sig_table(labels, fn, cw=120):
@@ -501,15 +514,17 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
                 p = p.melt("조직", var_name="종류", value_name="건수")
                 fig_dash = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if dash_chart_mode=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
                 fig_dash.update_layout(xaxis_tickangle=-45, height=340)
-            E.append(_fig_to_image(fig_dash, max_width=1000, height=340)); E.append(Spacer(1,10))
-        except Exception:
-            pass
+            _append_pdf_figure(E, fig_dash, st_, max_width=1000, height=340)
+        except Exception as e:
+            E.append(Paragraph(f"현황 차트 생성 중 오류: {e}", st_["notice"]))
+            E.append(Spacer(1,6))
         try:
             fig_trend = go.Figure(); fig_trend.add_trace(go.Scatter(x=agg["조직"], y=agg["총_미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
             fig_trend.update_layout(title=f"미처리 건수 추이 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캔"].max()*1.2 if agg["총_미스캔"].max()>0 else 10]), height=340)
-            E.append(_fig_to_image(fig_trend, max_width=1000, height=340)); E.append(Spacer(1,10))
-        except Exception:
-            pass
+            _append_pdf_figure(E, fig_trend, st_, max_width=1000, height=340)
+        except Exception as e:
+            E.append(Paragraph(f"추이 차트 생성 중 오류: {e}", st_["notice"]))
+            E.append(Spacer(1,6))
 
     map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔","sum"), 대상건=("증권번호","count")).reset_index()
     map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
@@ -526,9 +541,10 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
             else:
                 fig_map = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미스캔 분포", color_continuous_scale="RdYlGn_r")
             fig_map.update_layout(margin=dict(l=20,r=20,t=35,b=20), width=1000, height=340)
-            E.append(_fig_to_image(fig_map, max_width=1000, height=340)); E.append(Spacer(1,10))
-        except Exception:
-            pass
+            _append_pdf_figure(E, fig_map, st_, max_width=1000, height=340)
+        except Exception as e:
+            E.append(Paragraph(f"미처리맵 생성 중 오류: {e}", st_["notice"]))
+            E.append(Spacer(1,6))
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 리포트", st_["section"]))
