@@ -228,7 +228,10 @@ def build_hierarchy_report(df, months=None):
                                  "증번수":stats["증번수"], "전체대상":stats["전체_대상"], "전체스캔":stats["전체_스캔"],
                                  "전체미스캔":stats["전체_미스캔"], "스캔율":stats["스캔율"],
                                  "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"], 1)})
-    return pd.DataFrame(rows)
+    report = pd.DataFrame(rows)
+    if report.empty:
+        return report
+    return report.sort_values(["전체미스캔", "증번수"], ascending=[False, False]).reset_index(drop=True)
 
 @st.cache_data(ttl=300)
 def build_monthly_hierarchy(df, months=None):
@@ -438,8 +441,8 @@ def report_excel(df, months):
     
     ws.merge_cells("A1:K1"); ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
     ws["A1"].font = Font(name=tfn,size=12,bold=True); ws["A1"].alignment = Alignment(horizontal="center"); ws.row_dimensions[1].height = 22
-    headers = ["구분","부문","총괄","부서","영업가족","FA고지","비교설명","완전판매","총미스캔","대상건","미처리율"]
-    cws = [14,20,20,20,24,12,12,12,14,12,16]
+    headers = ["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]
+    cws = [14,20,20,20,24,12,12,12,14,16]
     for ci,(h,w) in enumerate(zip(headers,cws),1):
         c=ws.cell(2,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center",vertical="center")
         ws.column_dimensions[get_column_letter(ci)].width=w
@@ -448,8 +451,8 @@ def report_excel(df, months):
     if report.empty: return io.BytesIO()
     ri = 3
     for _, row in report.iterrows():
-        gbn = row["구분"]; rate_str = f"{row['미처리율']:.1f}%"
-        vals = [gbn, row["부문"], row["총괄"], row["부서"], row["영업가족"], row["FA"], row["비교"], row["완판"], row["총미스캔"], row["대상건"], rate_str]
+        gbn = row["구분"]; rate_str = f"{row['스캔율']:.1f}%"
+        vals = [gbn, row["부문"], row["총괄"], row["부서"], row["영업가족"], row["증번수"], row["전체대상"], row["전체스캔"], row["전체미스캔"], rate_str]
         fill = fills.get(gbn, fills["영업가족_alt"] if ri%2==0 else None)
         fnt  = fonts_wc.get(gbn, bf)
         for ci,v in enumerate(vals,1):
@@ -508,7 +511,7 @@ def report_pdf(df, months):
     report = build_hierarchy_report(df, months)
     if not report.empty:
         E.append(Paragraph("▶ 부문 / 총괄 / 부서 / 영업가족 계층 집계", st_["section"]))
-        hdr=[["구분","부문","총괄","부서","영업가족","FA","비교","완판","총미스캔","대상건","미처리율"]]
+        hdr=[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]]
         drows, sub_idx = [], []
         for i,(_,r) in enumerate(report.iterrows()):
             drows.append([
@@ -517,15 +520,14 @@ def report_pdf(df, months):
                 r["총괄"],
                 r["부서"],
                 r["영업가족"],
-                f"{int(r['FA']):,}",
-                f"{int(r['비교']):,}",
-                f"{int(r['완판']):,}",
-                f"{int(r['총미스캔']):,}",
-                f"{int(r['대상건']):,}",
-                f"{r['미처리율']:.1f}%"
+                f"{int(r['증번수']):,}",
+                f"{int(r['전체대상']):,}",
+                f"{int(r['전체스캔']):,}",
+                f"{int(r['전체미스캔']):,}",
+                f"{r['스캔율']:.1f}%"
             ])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[40,52,52,52,72,29,29,29,39,36,39],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr+drows,[40,52,52,52,72,36,39,39,39,39],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
@@ -1052,15 +1054,15 @@ def dashboard_page():
                 elif row["구분"]=="총괄계": return ["background-color:#2E75B6;color:white;font-weight:bold"]*len(row)
                 elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
                 return [""]*len(row)
-            disp_df = report_df.copy()
+            disp_df = report_df[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]].copy()
+            st.caption("스캔 처리: 스캔, M스캔, 보험사스캔 / 완판대상: 스캔, M스캔, 미스캔만 대상")
             st.dataframe(
                 disp_df.style.apply(style_row, axis=1).format({
-                    "FA": "{:,}",
-                    "비교": "{:,}",
-                    "완판": "{:,}",
-                    "총미스캔": "{:,}",
-                    "대상건": "{:,}",
-                    "미처리율": "{:.1f}%"
+                    "증번수": "{:,}",
+                    "전체대상": "{:,}",
+                    "전체스캔": "{:,}",
+                    "전체미스캔": "{:,}",
+                    "스캔율": "{:.1f}%"
                 }),
                 use_container_width=True,
                 hide_index=True,
