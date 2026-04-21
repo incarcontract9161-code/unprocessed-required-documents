@@ -751,13 +751,13 @@ df = load_data()
 
 if df.empty:
     st.warning( "📭 데이터가 없습니다. GitHub에 'insurance_data.xlsx' 파일을 업로드해주세요. ")
-    st.info( " " "
+    st.info( """
     **데이터 업로드 방법:**
     1. GitHub 저장소에 `insurance_data.xlsx` 파일 업로드
     2. Git commit  & push
     3. Streamlit Cloud가 자동으로 재배포 (1-2분 소요)
     4. 페이지 새로고침
-     " " ")
+     """)
     return
 
 # 상태바
