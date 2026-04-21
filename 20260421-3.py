@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio  # PDF 차트 이미지 렌더링용
+import plotly.io as pio
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
@@ -96,7 +96,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼 (개인정보 제외, 대상/스캔/율 로직 적용)
+# 3. 집계 헬퍼
 # ==========================================
 def calculate_scan_stats(df_group):
     cnt = len(df_group)  # 대상건 = 증권개수
@@ -104,7 +104,6 @@ def calculate_scan_stats(df_group):
     # FA고지, 비교설명: 증번당 필수 대상
     FA_대상 = cnt
     비교_대상 = cnt
-    
     # 완판: 해당사항없음 제외 대상
     완판_대상 = int(df_group["완전판매_대상"].sum())
     
@@ -144,7 +143,7 @@ def build_group_scan_stats(df, group_col):
     return pd.DataFrame(rows)
 
 # ==========================================
-# 4. 전체 계층 리포트 (소속 정렬 + 소계/총계 자동 생성)
+# 4. 전체 계층 리포트 (KeyError 해결: 반환 컬럼 명시적 통일)
 # ==========================================
 @st.cache_data(ttl=300)
 def build_hierarchy_report(df, months=None):
@@ -161,8 +160,9 @@ def build_hierarchy_report(df, months=None):
                 s = calculate_scan_stats(grp)
                 row = {c: path_vals[i] if i < len(path_vals) else "" for i, c in enumerate(levels)}
                 row["영업가족"] = val
-                row.update({"구분": "영업가족", "대상건": s["대상건"], "대상스캔건": s["대상스캔건"], 
-                            "전체스캔": s["전체스캔"], "스캔율": s["스캔율"]})
+                row.update({"구분": "영업가족", "증번수": s["증번수"], "대상건": s["대상건"], 
+                            "대상스캔건": s["대상스캔건"], "전체스캔": s["전체스캔"], 
+                            "전체미스캔": s["전체미스캔"], "스캔율": s["스캔율"]})
                 rows.append(row)
         else:
             col = levels[level_idx]
@@ -175,8 +175,9 @@ def build_hierarchy_report(df, months=None):
                 elif col == "부서": row["구분"] = "부서계"
                 elif col == "소속": row["구분"] = "소속계"
                 
-                row.update({"대상건": s["대상건"], "대상스캔건": s["대상스캔건"], 
-                            "전체스캔": s["전체스캔"], "스캔율": s["스캔율"]})
+                row.update({"증번수": s["증번수"], "대상건": s["대상건"], 
+                            "대상스캔건": s["대상스캔건"], "전체스캔": s["전체스캔"], 
+                            "전체미스캔": s["전체미스캔"], "스캔율": s["스캔율"]})
                 rows.append(row)
                 recursive_agg(grp, level_idx + 1, path_vals + [val])
 
@@ -190,8 +191,8 @@ def build_hierarchy_report(df, months=None):
     ts = calculate_scan_stats(src)
     t_row = {col: "" for col in report.columns}
     t_row["구분"] = "총계"
-    t_row.update({"대상건": ts["대상건"], "대상스캔건": ts["대상스캔건"], 
-                  "전체스캔": ts["전체스캔"], "스캔율": ts["스캔율"]})
+    t_row.update({"증번수": ts["증번수"], "대상건": ts["대상건"], "대상스캔건": ts["대상스캔건"], 
+                  "전체스캔": ts["전체스캔"], "전체미스캔": ts["전체미스캔"], "스캔율": ts["스캔율"]})
     report = pd.concat([report, pd.DataFrame([t_row])], ignore_index=True)
     return report
 
@@ -272,7 +273,7 @@ def _pdf_styles(fn):
 
 def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
     if not data or len(data) < 1: return Spacer(1,0)
-    cw_scaled = [w * 1.7 for w in cw]  # 표 width 확장
+    cw_scaled = [w * 1.7 for w in cw]
     align_map = {"LEFT":0, "CENTER":1, "RIGHT":2}
     align_value = align_map.get(align.upper(), 1)
     S = getSampleStyleSheet()
@@ -282,9 +283,7 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
     cmds = [
         ("FONTNAME", (0,0),(-1,-1), fn), ("FONTSIZE", (0,0),(-1,-1), 8),
         ("ALIGN", (0,0),(-1,-1), align.upper()), ("VALIGN", (0,0),(-1,-1), "MIDDLE"),
-        ("WORDWRAP", (0,0),(-1,-1), "CJK"),
-        ("GRID", (0,0),(-1,-1), 0.4, colors.grey),
-        # 여백 최소화
+        ("WORDWRAP", (0,0),(-1,-1), "CJK"), ("GRID", (0,0),(-1,-1), 0.4, colors.grey),
         ("LEFTPADDING", (0,0),(-1,-1), 2), ("RIGHTPADDING", (0,0),(-1,-1), 2),
         ("TOPPADDING", (0,0),(-1,-1), 2), ("BOTTOMPADDING",(0,0),(-1,-1), 2),
         ("BACKGROUND", (0,0),(-1,header_rows-1), colors.HexColor("#DCE6F1")),
@@ -303,7 +302,6 @@ def _sig_table(labels, fn, cw=120):
         ("INNERGRID",(0,0),(-1,-1),0.3,colors.lightgrey)]))
     return t
 
-# [추가] Plotly 차트를 ReportLab Image로 변환
 def plotly_to_image(fig, width_mm=160, height_mm=90):
     try:
         img_bytes = pio.to_image(fig, format='png', width=1200, height=600, scale=2)
@@ -326,8 +324,8 @@ def report_excel(df, months):
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     
     has_sosok = "소속" in df.columns
-    headers = ["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "스캔율"]
-    cws = [14,20,20,20] + ([18] if has_sosok else []) + [24,12,12,14,12,16]
+    headers = ["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "전체미스캔", "스캔율"]
+    cws = [14,20,20,20] + ([18] if has_sosok else []) + [24,12,12,14,14,12,16]
     ws.merge_cells(f"A1:{get_column_letter(len(headers))}1")
     ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
     ws["A1"].font = Font(name=tfn,size=12,bold=True); ws["A1"].alignment = Alignment(horizontal="center"); ws.row_dimensions[1].height = 22
@@ -341,7 +339,7 @@ def report_excel(df, months):
     ri = 3
     for _, row in report.iterrows(): 
         gbn = row["구분"]; rate_str = f"{row['스캔율']:.1f}%"
-        vals = [gbn, row["부문"], row["총괄"], row["부서"]] + ([row.get("소속","")] if has_sosok else []) + [row["영업가족"], row["증번수"], row["대상건"], row["대상스캔건"], row["전체스캔"], rate_str]
+        vals = [gbn, row["부문"], row["총괄"], row["부서"]] + ([row.get("소속","")] if has_sosok else []) + [row["영업가족"], row["증번수"], row["대상건"], row["대상스캔건"], row["전체스캔"], row["전체미스캔"], rate_str]
         fill = fills.get(gbn, fills["영업가족_alt"] if ri%2==0 else None)
         fnt  = fonts_wc.get(gbn, bf)
         for ci,v in enumerate(vals,1):
@@ -377,13 +375,13 @@ def report_pdf(df, months):
     report = build_hierarchy_report(df, months)
     if not report.empty:
         has_sosok = "소속" in report.columns
-        hdr = [["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "스캔율"]]
+        hdr = [["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "전체미스캔", "스캔율"]]
         drows, sub_idx = [], []
         for i,(_,r) in enumerate(report.iterrows()):
             drows.append([r["구분"], r["부문"], r["총괄"], r["부서"]] + ([r.get("소속","")] if has_sosok else []) + [r["영업가족"],
-                        f"{int(r['증번수']):,}", f"{int(r['대상건']):,}", f"{int(r['대상스캔건']):,}", f"{int(r['전체스캔']):,}", f"{r['스캔율']:.1f}%"])
+                        f"{int(r['증번수']):,}", f"{int(r['대상건']):,}", f"{int(r['대상스캔건']):,}", f"{int(r['전체스캔']):,}", f"{int(r['전체미스캔']):,}", f"{r['스캔율']:.1f}%"])
             if r["구분"] in ("부문계", "총괄계", "부서계", "소속계"): sub_idx.append(i+1)
-        col_w = [24,32,32,32] + ([22] if has_sosok else []) + [45,22,24,24,24,22]
+        col_w = [24,32,32,32] + ([22] if has_sosok else []) + [45,22,24,24,24,24,22]
         E.append(_tbl(hdr+drows, col_w, fn, sub_rows=sub_idx)); E.append(Spacer(1,8))
         
     monthly = build_monthly_hierarchy(df, months)
@@ -418,7 +416,6 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     ], [90, 120], fn, header_rows=0, align="LEFT"))
     E.append(Spacer(1, 8))
 
-    # 대시보드 차트 이미지 생성 및 삽입
     agg = build_group_scan_stats(df_sel, agg_group).sort_values("총미스캔", ascending=False).head(dash_top_n)
     if not agg.empty:
         fig1 = go.Figure()
@@ -437,10 +434,10 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     report = build_hierarchy_report(df, months)
     if not report.empty:
         has_sosok = "소속" in report.columns
-        hdr = [["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "스캔율"]]
+        hdr = [["구분", "부문", "총괄", "부서"] + (["소속"] if has_sosok else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "전체미스캔", "스캔율"]]
         drows = [[r["구분"], r["부문"], r["총괄"], r["부서"]] + ([r.get("소속","")] if has_sosok else []) + [r["영업가족"],
-                    f"{int(r['증번수']):,}", f"{int(r['대상건']):,}", f"{int(r['대상스캔건']):,}", f"{int(r['전체스캔']):,}", f"{r['스캔율']:.1f}%"] for _, r in report.iterrows()]
-        col_w = [24,32,32,32] + ([22] if has_sosok else []) + [45,22,24,24,24,22]
+                    f"{int(r['증번수']):,}", f"{int(r['대상건']):,}", f"{int(r['대상스캔건']):,}", f"{int(r['전체스캔']):,}", f"{int(r['전체미스캔']):,}", f"{r['스캔율']:.1f}%"] for _, r in report.iterrows()]
+        col_w = [24,32,32,32] + ([22] if has_sosok else []) + [45,22,24,24,24,24,22]
         E.append(_tbl(hdr + drows, col_w, fn))
     doc.build(E); buf.seek(0); return buf
 
@@ -741,7 +738,7 @@ def dashboard_page():
                     "대상건": "{:,}", "대상스캔건": "{:,}", "전체스캔": "{:,}", "미스캔": "{:,}", "스캔율": "{:.1f}%", "미처리율": "{:.1f}%"
                 }), use_container_width=True, hide_index=True)
 
-    # ── TAB 3 : 계층 리포트 ─────────────────────────
+    # ── TAB 3 : 계층 리포트 (KeyError 해결 부분) ─────────────────────────
     with tab_report:
         st.subheader("📊 전체 데이터 기반 계층별 미처리 현황")
         report_df = build_hierarchy_report(df, sel_months)
@@ -753,10 +750,16 @@ def dashboard_page():
                 elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
                 elif row["구분"]=="소속계": return ["background-color:#E2EFDA;font-weight:bold"]*len(row)
                 return [""]*len(row)
-            disp_cols = ["구분", "부문", "총괄", "부서"] + (["소속"] if "소속" in report_df.columns else []) + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "스캔율"]
+            
+            # [수정] report_df에 실제 존재하는 컬럼만 동적으로 선택하여 KeyError 방지
+            base_cols = ["구분", "부문", "총괄", "부서"]
+            if "소속" in report_df.columns: base_cols.append("소속")
+            disp_cols = base_cols + ["영업가족", "증번수", "대상건", "대상스캔건", "전체스캔", "전체미스캔", "스캔율"]
+            
+            # 존재하지 않는 컬럼이 있을 경우 필터링 (안정성 확보)
+            disp_cols = [c for c in disp_cols if c in report_df.columns]
             disp_df = report_df[disp_cols].copy()
             
-            # [수정] 줄바꿈 방지 & 표 최적화 CSS 적용
             st.markdown("""
             <style>
             table { white-space: nowrap !important; font-size: 0.85rem !important; }
@@ -767,7 +770,8 @@ def dashboard_page():
             
             st.dataframe(
                 disp_df.style.apply(style_row, axis=1).format({
-                    "증번수": "{:,}", "대상건": "{:,}", "대상스캔건": "{:,}", "전체스캔": "{:,}", "스캔율": "{:.1f}%"
+                    "증번수": "{:,}", "대상건": "{:,}", "대상스캔건": "{:,}", "전체스캔": "{:,}", 
+                    "전체미스캔": "{:,}", "스캔율": "{:.1f}%"
                 }), use_container_width=True, hide_index=True, height=720)
             
             st.markdown("#### 📅 월별 계층 집계 데이터 (가로 피벗)")
@@ -836,7 +840,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v5.2 | 개인정보제외·가로피벗·차트복구·구문오류해결 | © 2026")
+            st.caption("v5.3 | KeyError해결·정렬최적화·가로피벗 | © 2026")
         dashboard_page()
 
 if __name__ == "__main__":
