@@ -10,7 +10,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, Image as RLImage, PageBreak, HRFlowable)
+                                TableStyle, PageBreak, HRFlowable)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -34,21 +34,21 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
 GUIDANCE_TEXT = (
     "【책임판매 필수서류 안내】\n"
     "개인정보동의서, 비교설명확인서, 고지의무확인서, 완전판매확인서(대상계약 限)는 "
-    "금융소비자보호법 및 보험업 감독규정에 따라 신계약 체결 전 구비가 요구되는 필수 서류입니다. "
-    "상기 서류는 소비자 보호 및 설명 의무 이행 여부를 확인하기 위한 내부 통제 관리 대상 서류로서, 실적 확정 입력 마감 시점까지 제출 완료를 원칙으로 하며 미비 시 내부 통제 리스크 관리 대상 계약으로 분류됩니다."
+    "금융소비자보호법 및 보험업 감독규정에 따라 신계약 체결 전 반드시 완비되어야 하며, "
+    "미비 시 리스크 계약으로 간주됩니다."
 )
 PRECAUTION_TEXT_COVER = (
     "【미처리 시 유의사항】\n"
-    "실적 확정 입력 마감 시점까지 필수 서류가 제출되지 않은 계약과 조직에 대하여는 모집질서 및 분쟁  리스크 관리 대상으로 분류되어 관리됩니다.\n"
-    "내부 통제 기준 충족 시까지,  내부 심사 및 결재 과정에서 승인 여부가 제한 될 수 있습니다. (리스크, 신규 운영자금 등 기타 지원 신청)"
+    "미결 조직은 모집질서 위반 및 특정 리스크에 준하여 관리됩니다.\n"
+    "신계약 리스크 점검 강화, 회사 지원금 및 특인 제한 등 불이익이 발생할 수 있습니다."
 )
 PRECAUTION_TEXT_CONFIRM = "영업가족별 미처리 현황 및 유의사항에 대하여 인지하였으며,"
-PRECAUTION_TEXT_SHEET = "본인은 신계약 필수 서류의 사전 구비 의무 및 미제출 시 내부 통제 관리 기준이 적용될 수 있음을 확인합니다."
-SIGNATURE_CONFIRMATION_TEXT = "신계약 필수 서류의 사전 구비 의무 및 미제출 시 내부 통제 관리 기준이 적용 사항을 영업가족에게 안내하였음을 확인합니다."
+PRECAUTION_TEXT_SHEET = "영업가족별 미처리현황 및 유의사항에 대하여 안내받았음을 확인합니다."
+SIGNATURE_CONFIRMATION_TEXT = "영업가족에게 안내하였음을 확인합니다."
 
 # 필수 서류 상세 안내 표 데이터
 REQUIRED_DOCS_TABLE = [
-    ["No.", "서류명", "법적 관리 근거 및 관련 내부 통제 기준", "목적 및 주요 내용"],
+    ["No.", "서류명", "법적 근거", "목적 및 주요 내용"],
     ["1", "개인정보동의서", 
      "개인정보보호법 15조 및\n대리점 표준 내부통제기준 27조",
      "개인정보 처리 적법 근거, 보유계약 전산 관리 과정에\n따른 개인정보 처리로 신계약시 필수 징구"],
@@ -57,9 +57,9 @@ REQUIRED_DOCS_TABLE = [
      "유사 상품 3개 이상 비교·설명 이행\n사실 고객 확인 서명"],
     ["3", "고지의무확인서",
      "금융소비자보호법 26조와\n동법시행령 24조",
-     "판매자 중요사항 고지의무 이행 확인,\n권한·책임·보상 관련 핵심 사항 고지,\n소비자 오인 예방"],
-    ["4", "완전판매확인서\n(대상: 종신, CI, CEO정기, 고액)",
-     "금융소비자보호법 제17·19조 설명 적합성 적정성 관련 조항\n영업지원기준안",
+     "판매자 권한·책임·보상 관련 핵심 사항 고지,\n소비자 오인 예방"],
+    ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)",
+     "금융소비자보호법 제17·19조\n영업지원기준안",
      "약관,청약서 부본 제공, 중요 상품 이해 및\n자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
 ]
 
@@ -89,41 +89,32 @@ def load_data():
         df["비교설명_c"] = df["비교설명"].fillna("").astype(str).str.strip()
         df["완전판매_c"] = df["완전판매"].fillna("").astype(str).str.strip()
 
-        # 스캔 여부 판정 함수 (스캔, M스캔, 보험사스캔 = 스캔 처리)
         def is_scanned(val):
             if pd.isna(val) or val == "":
                 return False
-            val_str = str(val).strip()
-            return val_str in ["스캔", "M스캔", "보험사스캔"]
+            return str(val).strip() in ["스캔", "M스캔", "보험사스캔"]
 
-        # 미스캔 여부 판정
         def is_not_scanned(val):
             if pd.isna(val) or val == "":
                 return True
-            val_str = str(val).strip()
-            return val_str == "미스캔"
+            return str(val).strip() == "미스캔"
 
-        # 완판 대상 여부 판정 (스캔, M스캔, 미스캔만 대상)
         def is_cs_target(val):
             if pd.isna(val) or val == "":
                 return False
-            val_str = str(val).strip()
-            return val_str in ["스캔", "M스캔", "미스캔"]
+            return str(val).strip() in ["스캔", "M스캔", "미스캔"]
 
-        # 각 서류별 스캔/미스캔 플래그 (증번 기준 집계용)
         df["개인정보_스캔"] = df["개인정보_c"].apply(is_scanned).astype(int)
         df["개인정보_미스캔"] = df["개인정보_c"].apply(is_not_scanned).astype(int)
-
         df["FA고지_스캔"] = df["FA고지_c"].apply(is_scanned).astype(int)
         df["FA고지_미스캔"] = df["FA고지_c"].apply(is_not_scanned).astype(int)
-
         df["비교설명_스캔"] = df["비교설명_c"].apply(is_scanned).astype(int)
         df["비교설명_미스캔"] = df["비교설명_c"].apply(is_not_scanned).astype(int)
-
         df["완전판매_대상"] = df["완전판매_c"].apply(is_cs_target).astype(int)
         df["완전판매_스캔"] = df["완전판매_c"].apply(is_scanned).astype(int)
         df["완전판매_미스캔"] = df["완전판매_c"].apply(is_not_scanned).astype(int)
 
+        # 기존 로직 호환용
         df["FA_miss"] = (df["FA고지_c"] == "미스캔").astype(int)
         df["비교_miss"] = (df["비교설명_c"] == "미스캔").astype(int)
         df["완판_miss"] = (df["완전판매_c"] == "미스캔").astype(int)
@@ -149,33 +140,23 @@ def get_file_update_time():
 def calculate_scan_stats(df_group):
     """
     증번 기준 스캔율 계산
-    - 개인정보, FA고지, 비교설명: 증번당 필수 (각각 증번수만큼 대상)
-    - 완전판매: 대상건만 집계 (스캔, M스캔, 미스캔만)
+    - 개인정보, FA고지, 비교설명: 증번당 필수
+    - 완전판매: 스캔, M스캔, 미스캔만 대상
     - 스캔 처리: 스캔, M스캔, 보험사스캔
     """
-    cnt = len(df_group)  # 증번 수
-
-    # 필수 서류 (증번당 1개씩 필요 = 증번수)
+    cnt = len(df_group)
     개인정보_대상 = cnt
     FA고지_대상 = cnt
     비교설명_대상 = cnt
-
-    개인정보_스캔 = df_group["개인정보_스캔"].sum()
-    FA고지_스캔 = df_group["FA고지_스캔"].sum()
-    비교설명_스캔 = df_group["비교설명_스캔"].sum()
-
-    # 완전판매 (대상건만)
-    완전판매_대상 = df_group["완전판매_대상"].sum()
-    완전판매_스캔 = df_group["완전판매_스캔"].sum()
-
-    # 전체 대상 및 스캔
+    개인정보_스캔 = int(df_group["개인정보_스캔"].sum())
+    FA고지_스캔 = int(df_group["FA고지_스캔"].sum())
+    비교설명_스캔 = int(df_group["비교설명_스캔"].sum())
+    완전판매_대상 = int(df_group["완전판매_대상"].sum())
+    완전판매_스캔 = int(df_group["완전판매_스캔"].sum())
     전체_대상 = 개인정보_대상 + FA고지_대상 + 비교설명_대상 + 완전판매_대상
     전체_스캔 = 개인정보_스캔 + FA고지_스캔 + 비교설명_스캔 + 완전판매_스캔
     전체_미스캔 = 전체_대상 - 전체_스캔
-
-    # 스캔율
     스캔율 = round((전체_스캔 / 전체_대상 * 100), 1) if 전체_대상 > 0 else 0.0
-
     return {
         "증번수": cnt,
         "개인정보_대상": 개인정보_대상,
@@ -193,8 +174,26 @@ def calculate_scan_stats(df_group):
         "전체_대상": 전체_대상,
         "전체_스캔": 전체_스캔,
         "전체_미스캔": 전체_미스캔,
-        "스캔율": 스캔율
+        "스캔율": 스캔율,
     }
+
+def build_group_scan_stats(df, group_col):
+    rows = []
+    for org, df_group in df.groupby(group_col):
+        stats = calculate_scan_stats(df_group)
+        rows.append({
+            "조직": org,
+            "대상건": stats["증번수"],
+            "스캔대상건수": stats["전체_대상"],
+            "전체스캔": stats["전체_스캔"],
+            "총_미스캔": stats["전체_미스캔"],
+            "스캔율": stats["스캔율"],
+            "미처리율": round(100 - stats["스캔율"], 1),
+            "FA고지_미스캔": stats["FA고지_미스캔"],
+            "비교설명_미스캔": stats["비교설명_미스캔"],
+            "완전판매_미스캔": stats["완전판매_미스캔"],
+        })
+    return pd.DataFrame(rows)
 
 # ==========================================
 # 4. 전체 계층 리포트
@@ -209,28 +208,26 @@ def build_hierarchy_report(df, months=None):
         rows.append({"구분":"부문계", "부문":bm, "총괄":"", "부서":"", "영업가족":"",
                      "증번수":stats["증번수"], "전체대상":stats["전체_대상"], "전체스캔":stats["전체_스캔"],
                      "전체미스캔":stats["전체_미스캔"], "스캔율":stats["스캔율"],
-                     "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"], 1)})
+                     "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"],1)})
         for tg, df_tg in df_bm.groupby("총괄"):
             stats = calculate_scan_stats(df_tg)
             rows.append({"구분":"총괄계", "부문":bm, "총괄":tg, "부서":"", "영업가족":"",
                          "증번수":stats["증번수"], "전체대상":stats["전체_대상"], "전체스캔":stats["전체_스캔"],
                          "전체미스캔":stats["전체_미스캔"], "스캔율":stats["스캔율"],
-                         "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"], 1)})
+                         "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"],1)})
             for ds, df_ds in df_tg.groupby("부서"):
                 stats = calculate_scan_stats(df_ds)
                 rows.append({"구분":"부서계", "부문":bm, "총괄":tg, "부서":ds, "영업가족":"",
                              "증번수":stats["증번수"], "전체대상":stats["전체_대상"], "전체스캔":stats["전체_스캔"],
                              "전체미스캔":stats["전체_미스캔"], "스캔율":stats["스캔율"],
-                             "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"], 1)})
+                             "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"],1)})
                 for fg, df_fg in df_ds.groupby("영업가족"):
                     stats = calculate_scan_stats(df_fg)
                     rows.append({"구분":"영업가족", "부문":bm, "총괄":tg, "부서":ds, "영업가족":fg,
                                  "증번수":stats["증번수"], "전체대상":stats["전체_대상"], "전체스캔":stats["전체_스캔"],
                                  "전체미스캔":stats["전체_미스캔"], "스캔율":stats["스캔율"],
-                                 "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"], 1)})
+                                 "총미스캔":stats["전체_미스캔"], "대상건":stats["증번수"], "미처리율":round(100 - stats["스캔율"],1)})
     report = pd.DataFrame(rows)
-    if report.empty:
-        return report
     return report.sort_values(["전체미스캔", "증번수"], ascending=[False, False]).reset_index(drop=True)
 
 @st.cache_data(ttl=300)
@@ -256,46 +253,6 @@ def build_monthly_hierarchy(df, months=None):
                                  "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
                                  "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
     return pd.DataFrame(rows)
-
-@st.cache_data(ttl=300)
-def build_monthly_hierarchy_pivot(df, months=None):
-    src = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
-    if src.empty: return pd.DataFrame()
-    rows = []
-    for mon, dm in src.groupby("월_피리어드"):
-        for bm, db in dm.groupby("부문"):
-            fa_b = int(db["FA_miss"].sum()); bi_b = int(db["비교_miss"].sum()); cs_b = int(db["완판_miss"].sum())
-            rows.append({"월":mon, "구분":"부문계", "부문":bm, "총괄":"", "부서":"",
-                         "FA":fa_b, "비교":bi_b, "완판":cs_b, "총미스캔":fa_b+bi_b+cs_b,
-                         "대상건":len(db), "미처리율":round((fa_b+bi_b+cs_b)/len(db)*100,1) if len(db) else 0.0})
-            for tg, dt in db.groupby("총괄"):
-                fa_t = int(dt["FA_miss"].sum()); bi_t = int(dt["비교_miss"].sum()); cs_t = int(dt["완판_miss"].sum())
-                rows.append({"월":mon, "구분":"총괄계", "부문":bm, "총괄":tg, "부서":"",
-                             "FA":fa_t, "비교":bi_t, "완판":cs_t, "총미스캔":fa_t+bi_t+cs_t,
-                             "대상건":len(dt), "미처리율":round((fa_t+bi_t+cs_t)/len(dt)*100,1) if len(dt) else 0.0})
-                for ds, dd in dt.groupby("부서"):
-                    fa = int(dd["FA_miss"].sum()); bi = int(dd["비교_miss"].sum()); cs = int(dd["완판_miss"].sum())
-                    tot = fa + bi + cs; cnt = len(dd)
-                    rows.append({"월":mon, "구분":"부서계", "부문":bm, "총괄":tg, "부서":ds,
-                                 "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
-                                 "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
-    pivot_src = pd.DataFrame(rows)
-    if pivot_src.empty:
-        return pivot_src
-    metrics = ["FA","비교","완판","총미스캔","대상건","미처리율"]
-    pivot_frames = []
-    month_order = sorted(src["월_피리어드"].dropna().unique())
-    for metric in metrics:
-        temp = pivot_src.pivot_table(index=["구분","부문","총괄","부서"], columns="월", values=metric, aggfunc="first")
-        temp.columns = [f"{month}_{metric}" for month in temp.columns]
-        pivot_frames.append(temp)
-    pivot = pd.concat(pivot_frames, axis=1).reset_index()
-    ordered_columns = ["구분","부문","총괄","부서"]
-    for month in month_order:
-        for metric in metrics:
-            ordered_columns.append(f"{month}_{metric}")
-    pivot = pivot[[c for c in ordered_columns if c in pivot.columns]]
-    return pivot.fillna(0)
 
 # ==========================================
 # 5. 관리대장 선정 대상
@@ -392,30 +349,6 @@ def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
         if sub_rows and i in sub_rows: cmds.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#E9EEF8")))
     t.setStyle(TableStyle(cmds)); return t
 
-def _fig_to_image(fig, max_width=1000, height=360):
-    try:
-        img_buf = io.BytesIO()
-        fig.write_image(img_buf, format="png", width=max_width, height=height, scale=2)
-        img_buf.seek(0)
-        img = RLImage(img_buf)
-        desired_width = min(max_width, 820)
-        img.drawWidth = desired_width
-        img.drawHeight = height * (desired_width / max_width)
-        return img, None
-    except Exception as e:
-        return None, str(e)
-
-
-def _append_pdf_figure(E, fig, st_, max_width=1000, height=360):
-    img, err = _fig_to_image(fig, max_width=max_width, height=height)
-    if img is not None:
-        E.append(img)
-        E.append(Spacer(1,10))
-        return
-    E.append(Paragraph(f"차트 이미지를 생성하지 못했습니다: {err}", st_["notice"]))
-    E.append(Spacer(1,6))
-
-
 def _sig_table(labels, fn, cw=120):
     t = Table([labels,["____________________"]*len(labels),["(인)"]*len(labels)], colWidths=[cw*1.4]*len(labels))
     t.setStyle(TableStyle([("ALIGN",(0,0),(-1,-1),"CENTER"),("FONTNAME",(0,0),(-1,-1),fn),
@@ -436,13 +369,12 @@ def report_excel(df, months):
     fonts_wc = {"부문계":Font(name=tfn,size=9,bold=True,color="FFFFFF"), "총괄계":Font(name=tfn,size=9,bold=True,color="FFFFFF"),
                 "부서계":Font(name=tfn,size=9,bold=True)}
     h_fill = PatternFill("solid",fgColor="4472C4")
-    alt_fill = PatternFill("solid",fgColor="EEF3FB")
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     
     ws.merge_cells("A1:K1"); ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
     ws["A1"].font = Font(name=tfn,size=12,bold=True); ws["A1"].alignment = Alignment(horizontal="center"); ws.row_dimensions[1].height = 22
-    headers = ["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]
-    cws = [14,20,20,20,24,12,12,12,14,16]
+    headers = ["구분","부문","총괄","부서","영업가족","FA고지","비교설명","완전판매","총미스캔","대상건","미처리율"]
+    cws = [14,20,20,20,24,12,12,12,14,12,16]
     for ci,(h,w) in enumerate(zip(headers,cws),1):
         c=ws.cell(2,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center",vertical="center")
         ws.column_dimensions[get_column_letter(ci)].width=w
@@ -451,8 +383,8 @@ def report_excel(df, months):
     if report.empty: return io.BytesIO()
     ri = 3
     for _, row in report.iterrows():
-        gbn = row["구분"]; rate_str = f"{row['스캔율']:.1f}%"
-        vals = [gbn, row["부문"], row["총괄"], row["부서"], row["영업가족"], row["증번수"], row["전체대상"], row["전체스캔"], row["전체미스캔"], rate_str]
+        gbn = row["구분"]; rate_str = f"{row['미처리율']:.1f}%"
+        vals = [gbn, row["부문"], row["총괄"], row["부서"], row["영업가족"], row["FA"], row["비교"], row["완판"], row["총미스캔"], row["대상건"], rate_str]
         fill = fills.get(gbn, fills["영업가족_alt"] if ri%2==0 else None)
         fnt  = fonts_wc.get(gbn, bf)
         for ci,v in enumerate(vals,1):
@@ -477,27 +409,6 @@ def report_excel(df, months):
                 c=ws2.cell(ri2,ci,v); c.font=fnt2; c.border=bdr; c.alignment=Alignment(horizontal="center")
                 if isinstance(v,(int,float)): c.number_format = "#,##0"
                 if fill2: c.fill=fill2
-        pivot = build_monthly_hierarchy_pivot(df, months)
-        if not pivot.empty:
-            ws3 = wb.create_sheet("월별_피벗집계")
-            ws3.merge_cells("A1:Z1"); ws3["A1"] = f"월별 피벗형 계층 집계  ·  기간: {period_str}  ·  발급일: {today}"
-            ws3["A1"].font = Font(name=tfn,size=12,bold=True); ws3["A1"].alignment = Alignment(horizontal="center"); ws3.row_dimensions[1].height = 22
-            headers3 = pivot.columns.tolist()
-            widths3 = [16 if i < 4 else 12 for i in range(len(headers3))]
-            for ci,(h,w) in enumerate(zip(headers3,widths3),1):
-                c = ws3.cell(2,ci,h); c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
-                ws3.column_dimensions[get_column_letter(ci)].width = w
-            for ri3, (_, pr) in enumerate(pivot.iterrows(), 3):
-                for ci, h in enumerate(headers3, 1):
-                    val = pr[h]
-                    if isinstance(val, (int, float)) and h.endswith("_미처리율"):
-                        c = ws3.cell(ri3, ci, float(val) / 100)
-                        c.number_format = "0.0%"
-                    else:
-                        c = ws3.cell(ri3, ci, val)
-                    c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="center")
-                    if isinstance(val,(int,float)) and not h.endswith("_미처리율"): c.number_format = "#,##0"
-                    if ri3 % 2 == 0: c.fill = alt_fill
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
 # ==========================================
@@ -505,13 +416,13 @@ def report_excel(df, months):
 # ==========================================
 def report_pdf(df, months):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     E = [Paragraph("서류 미처리 현황 계층별 집계", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,6)]
     report = build_hierarchy_report(df, months)
     if not report.empty:
         E.append(Paragraph("▶ 부문 / 총괄 / 부서 / 영업가족 계층 집계", st_["section"]))
-        hdr=[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]]
+        hdr=[["구분","부문","총괄","부서","영업가족","FA","비교","완판","총미스캔","대상건","미처리율"]]
         drows, sub_idx = [], []
         for i,(_,r) in enumerate(report.iterrows()):
             drows.append([
@@ -520,14 +431,15 @@ def report_pdf(df, months):
                 r["총괄"],
                 r["부서"],
                 r["영업가족"],
-                f"{int(r['증번수']):,}",
-                f"{int(r['전체대상']):,}",
-                f"{int(r['전체스캔']):,}",
-                f"{int(r['전체미스캔']):,}",
-                f"{r['스캔율']:.1f}%"
+                f"{int(r['FA']):,}",
+                f"{int(r['비교']):,}",
+                f"{int(r['완판']):,}",
+                f"{int(r['총미스캔']):,}",
+                f"{int(r['대상건']):,}",
+                f"{r['미처리율']:.1f}%"
             ])
             if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[40,52,52,52,72,36,39,39,39,39],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+        E.append(_tbl(hdr+drows,[24,32,32,32,45,18,18,18,26,22,26],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
@@ -545,110 +457,7 @@ def report_pdf(df, months):
             f"{r['미처리율']:.1f}%"
         ] for _,r in monthly.iterrows()]
         msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
-        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[39,39,52,52,72,29,29,29,39,36,39],fn,sub_rows=msub))
-    pivot = build_monthly_hierarchy_pivot(df, months)
-    if not pivot.empty:
-        E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 집계", st_["section"]))
-        hdr = [pivot.columns.tolist()]
-        values = []
-        for _, pr in pivot.iterrows():
-            values.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
-        col_count = len(pivot.columns)
-        fixed = [24, 24, 30, 40]
-        month_cols = max(1, col_count - 4)
-        remaining = max(12, int((542 - sum(fixed)) / month_cols))
-        cw = fixed + [remaining] * month_cols
-        E.append(_tbl(hdr + values, cw, fn))
-    doc.build(E); buf.seek(0); return buf
-
-# ==========================================
-# 9. 전체 페이지 PDF
-
-def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="그룹형", dash_top_n=15, map_type="🔲 트리맵"):
-    fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
-    today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
-    E = [Paragraph("전체 페이지 요약 리포트", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,8)]
-
-    df_sel = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
-    fa_t, bi_t, cs_t = int(df_sel["FA_miss"].sum()), int(df_sel["비교_miss"].sum()), int(df_sel["완판_miss"].sum())
-    tot = fa_t + bi_t + cs_t
-    rate = round((tot / len(df_sel) * 100), 1) if len(df_sel) else 0.0
-    E.append(Paragraph("▶ 주요 KPI", st_["section"]))
-    summary = [["총 계약건수", f"{len(df_sel):,}"], ["총 미처리건수", f"{tot:,}"], ["미처리율", f"{rate:.1f}%"], ["FA/비교/완판", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"]]
-    E.append(_tbl([[s[0], s[1]] for s in summary], [90, 150], fn, header_rows=0, align="LEFT")); E.append(Spacer(1,8))
-
-    dash_doc_types = dash_doc_types or ["총 미스캔"]
-    agg = df_sel.groupby(agg_group).agg(FA고지_미스캔=("FA_miss","sum"), 비교설명_미스캔=("비교_miss","sum"), 완전판매_미스캔=("완판_miss","sum"), 대상건=("증권번호","count")).reset_index()
-    agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
-    agg["미처리율"] = (agg["총_미스캔"] / agg["대상건"] * 100).round(1)
-    agg = agg.rename(columns={agg_group: "조직"})
-    agg = agg.sort_values("총_미스캔", ascending=False).head(dash_top_n)
-    if not agg.empty:
-        E.append(Paragraph(f"▶ 현황 대시보드 차트 (집계: {agg_group})", st_["section"]))
-        hdr = [["조직", "총_미스캔", "미처리율", "FA고지", "비교설명", "완전판매", "대상건"]]
-        rows = [[r["조직"], f"{int(r['총_미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA고지_미스캔']):,}", f"{int(r['비교설명_미스캔']):,}", f"{int(r['완전판매_미스캔']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
-        E.append(_tbl(hdr + rows, [90, 60, 42, 42, 42, 42, 42], fn)); E.append(Spacer(1,8))
-        try:
-            if len(dash_doc_types)==1 and dash_doc_types[0]=="총 미스캔":
-                fig_dash = go.Figure()
-                fig_dash.add_trace(go.Bar(x=agg["조직"], y=agg["총_미스캔"], text=agg["총_미스캔"], textposition="outside", marker_color=agg["총_미스캔"], marker_colorscale="Reds"))
-                fig_dash.update_layout(title=f"미처리 건수 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캔"].max()*1.2 if agg["총_미스캔"].max()>0 else 10]), height=340)
-            elif len(dash_doc_types)==1:
-                cm = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔"}
-                fig_dash = px.bar(agg, x="조직", y=cm[dash_doc_types[0]], title=f"{dash_doc_types[0]} 미스캔 TOP {dash_top_n}", text=cm[dash_doc_types[0]], color=cm[dash_doc_types[0]], color_continuous_scale="Blues")
-                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
-            else:
-                cm2 = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔","총 미스캔":"총_미스캔"}
-                p = agg[["조직"]+[cm2[d] for d in dash_doc_types]].copy()
-                p.columns=["조직"]+dash_doc_types
-                p = p.melt("조직", var_name="종류", value_name="건수")
-                fig_dash = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if dash_chart_mode=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
-                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
-            _append_pdf_figure(E, fig_dash, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"현황 차트 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
-        try:
-            fig_trend = go.Figure(); fig_trend.add_trace(go.Scatter(x=agg["조직"], y=agg["총_미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
-            fig_trend.update_layout(title=f"미처리 건수 추이 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캔"].max()*1.2 if agg["총_미스캔"].max()>0 else 10]), height=340)
-            _append_pdf_figure(E, fig_trend, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"추이 차트 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
-
-    map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔","sum"), 대상건=("증권번호","count")).reset_index()
-    map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
-    map_agg = map_agg.sort_values("미스캔", ascending=False).head(dash_top_n)
-    if not map_agg.empty:
-        E.append(Paragraph(f"▶ {map_level}별 미스캔 분포 요약 ({map_type})", st_["section"]))
-        hdr = [[map_level, "미스캔", "미처리율", "대상건"]]
-        rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
-        E.append(_tbl(hdr + rows, [100, 55, 55, 55], fn)); E.append(Spacer(1,8))
-        try:
-            if map_type == "🥧 원그래프":
-                fig_map = px.pie(map_agg, values="미스캔", names=map_level, title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
-                fig_map.update_traces(textposition='inside', textinfo='percent+label')
-            else:
-                fig_map = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미스캔 분포", color_continuous_scale="RdYlGn_r")
-            fig_map.update_layout(margin=dict(l=20,r=20,t=35,b=20), width=1000, height=340)
-            _append_pdf_figure(E, fig_map, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"미처리맵 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
-    pivot = build_monthly_hierarchy_pivot(df, months)
-    if not pivot.empty:
-        E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 리포트", st_["section"]))
-        headers = pivot.columns.tolist()
-        rows = []
-        for _, pr in pivot.iterrows():
-            rows.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
-        fixed = [30, 30, 35, 45]
-        month_cols = max(1, len(headers) - 4)
-        remaining = max(12, int((542 - sum(fixed)) / month_cols))
-        widths = fixed + [remaining] * month_cols
-        E.append(_tbl([headers] + rows, widths, fn))
-
+        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[26,24,32,32,45,18,18,18,26,22,26],fn,sub_rows=msub))
     doc.build(E); buf.seek(0); return buf
 
 # ==========================================
@@ -945,13 +754,15 @@ def dashboard_page():
         return
 
     # KPI 메트릭
+    stats_all = calculate_scan_stats(df_sel)
     fa_t, bi_t, cs_t = int(df_sel["FA_miss"].sum()), int(df_sel["비교_miss"].sum()), int(df_sel["완판_miss"].sum())
-    tot, rate = fa_t+bi_t+cs_t, round((fa_t+bi_t+cs_t)/len(df_sel)*100,1) if len(df_sel)>0 else 0.0
+    miss_rate = round(100 - stats_all["스캔율"], 1)
     m1,m2,m3,m4 = st.columns(4)
-    m1.metric("📄 총 계약건수", f"{len(df_sel):,}건")
-    m2.metric("⚠️ 총 미처리건수", f"{tot:,}건")
-    m3.metric("📉 미처리율", f"{rate:.1f}%")
-    m4.metric("FA / 비교 / 완판", f"{fa_t} / {bi_t} / {cs_t}")
+    m1.metric("📄 총 계약건수", f"{stats_all['증번수']:,}건")
+    m2.metric("🧮 스캔대상건수", f"{stats_all['전체_대상']:,}건")
+    m3.metric("📈 스캔율", f"{stats_all['스캔율']:.1f}%")
+    m4.metric("📉 미처리율", f"{miss_rate:.1f}%")
+    st.caption(f"총 미처리건수: {stats_all['전체_미스캔']:,}건 | FA / 비교 / 완판: {fa_t:,} / {bi_t:,} / {cs_t:,}")
     st.divider()
 
     # 탭 구성 (데이터 관리 탭 제거)
@@ -963,25 +774,21 @@ def dashboard_page():
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
         with cs1: search_text = st.text_input("🔍 조직 검색", placeholder="조직명 입력...")
-        with cs2: agg_group = st.selectbox("집계 기준 (랭킹 단위)", ["부문","총괄","부서","영업가족"], key="agg_group")
-        agg = df_sel.groupby(agg_group).agg(
-            FA고지_미스캔=("FA_miss","sum"),
-            비교설명_미스캔=("비교_miss","sum"),
-            완전판매_미스캔=("완판_miss","sum"),
-            대상건=("증권번호","count")
-        ).reset_index()
-        agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
-        agg["미처리율"] = (agg["총_미스캔"]/agg["대상건"]*100).round(1)
-        agg = agg.rename(columns={agg_group:"조직"})
+        with cs2: agg_group = st.selectbox("집계 기준 (랭킹 단위)", ["부문","총괄","부서","영업가족"])
+        agg = build_group_scan_stats(df_sel, agg_group)
         if search_text: agg = agg[agg["조직"].astype(str).str.contains(search_text, case=False, na=False)]
         agg = agg.sort_values("총_미스캔", ascending=False).reset_index(drop=True); agg.insert(0,"순위",range(1,len(agg)+1))
         if agg.empty: st.info("조건에 맞는 데이터가 없습니다.")
         else:
             st.dataframe(
-                agg[["순위","조직","총_미스캔","미처리율","FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]]
+                agg[["순위","조직","대상건","스캔대상건수","전체스캔","총_미스캔","스캔율","미처리율","FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]]
                 .style.format({
                     "순위": "{:,}",
+                    "대상건": "{:,}",
+                    "스캔대상건수": "{:,}",
+                    "전체스캔": "{:,}",
                     "총_미스캔": "{:,}",
+                    "스캔율": "{:.1f}%",
                     "미처리율": "{:.1f}%",
                     "FA고지_미스캔": "{:,}",
                     "비교설명_미스캔": "{:,}",
@@ -990,10 +797,10 @@ def dashboard_page():
                 use_container_width=True,
                 hide_index=True
             )
-            top_n = st.slider("차트 표시 개수", 5, 30, 30, key="dash_top_n"); top = agg.head(top_n)
+            top_n = st.slider("차트 표시 개수", 5, 30, 30); top = agg.head(top_n)
             c1, c2 = st.columns(2)
             with c1:
-                doc_types = st.multiselect("표시 서류", ["FA고지","비교설명","완전판매","총 미스캔"], default=["총 미스캔"], key="dash_doc_types")
+                doc_types = st.multiselect("표시 서류", ["FA고지","비교설명","완전판매","총 미스캔"], default=["총 미스캔"])
                 if doc_types:
                     max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
                     if len(doc_types)==1 and doc_types[0]=="총 미스캔":
@@ -1004,7 +811,7 @@ def dashboard_page():
                         fig = px.bar(top, x="조직", y=cm[doc_types[0]], title=f"{doc_types[0]} 미스캔 TOP {top_n}", text=cm[doc_types[0]], color=cm[doc_types[0]], color_continuous_scale="Blues")
                         fig.update_layout(xaxis_tickangle=-45, height=420); st.plotly_chart(fig, use_container_width=True)
                     else:
-                        ct = st.radio("차트 유형", ["그룹형","누적형"], horizontal=True, key="dash_chart_mode")
+                        ct = st.radio("차트 유형", ["그룹형","누적형"], horizontal=True)
                         cm2 = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔","총 미스캔":"총_미스캔"}
                         p = top[["조직"]+[cm2[d] for d in doc_types]].copy(); p.columns=["조직"]+doc_types; p=p.melt("조직",var_name="종류",value_name="건수")
                         fig = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if ct=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
@@ -1020,23 +827,25 @@ def dashboard_page():
         mc1, mc2 = st.columns([1, 2])
         with mc1: map_level = st.selectbox("집계 단위", ["부문", "총괄", "부서", "영업가족"], key="map_level")
         with mc2: map_type = st.radio("차트 유형", ["🥧 원그래프", "🔲 트리맵"], horizontal=True, key="map_type")
-        map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔", "sum"), 대상건=("증권번호", "count")).reset_index()
-        map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
+        map_agg = build_group_scan_stats(df_sel, map_level).rename(columns={"총_미스캔":"미스캔"})
         map_agg = map_agg[map_agg["미스캔"] > 0].sort_values("미스캔", ascending=False)
         if map_agg.empty: st.info("미처리 건수가 있는 데이터가 없습니다.")
         else:
             if map_type == "🥧 원그래프":
-                fig_pie = px.pie(map_agg, values="미스캔", names=map_level, title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+                fig_pie = px.pie(map_agg, values="미스캔", names="조직", title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label'); fig_pie.update_layout(height=500)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                fig_tree = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미처리 분포", color_continuous_scale="RdYlGn_r")
+                fig_tree = px.treemap(map_agg, path=["조직"], values="미스캔", color="미처리율", title=f"{map_level}별 미처리 분포", color_continuous_scale="RdYlGn_r")
                 fig_tree.update_layout(height=500); st.plotly_chart(fig_tree, use_container_width=True)
             st.markdown(f"#### 📊 {map_level}별 상세 데이터")
             st.dataframe(
-                map_agg.rename(columns={map_level:"조직"}).style.format({
-                    "미스캔": "{:,}",
+                map_agg[["조직","대상건","스캔대상건수","전체스캔","미스캔","스캔율","미처리율"]].style.format({
                     "대상건": "{:,}",
+                    "스캔대상건수": "{:,}",
+                    "전체스캔": "{:,}",
+                    "미스캔": "{:,}",
+                    "스캔율": "{:.1f}%",
                     "미처리율": "{:.1f}%"
                 }),
                 use_container_width=True,
@@ -1069,19 +878,6 @@ def dashboard_page():
                 height=500
             )
             st.divider()
-            pivot_df = build_monthly_hierarchy_pivot(df, sel_months)
-            if not pivot_df.empty:
-                st.markdown("### 📌 월별 피벗형 계층 리포트")
-                pivot_display = pivot_df.copy()
-                for col in pivot_display.columns:
-                    if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율"):
-                        pivot_display[col] = pivot_display[col].apply(lambda x: int(x) if pd.notna(x) else "")
-                st.dataframe(
-                    pivot_display.style.format({col: "{:,}" for col in pivot_display.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_미처리율")}),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=420
-                )
             cr1, cr2 = st.columns(2)
             with cr1:
                 if st.button("📥 계층 리포트 Excel", use_container_width=True):
@@ -1091,17 +887,6 @@ def dashboard_page():
                 if st.button("📥 계층 리포트 PDF", use_container_width=True):
                     with st.spinner("생성 중..."): buf2 = report_pdf(df, sel_months)
                     st.download_button("⬇️ PDF", buf2, f"계층리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_rpt_pdf")
-            st.markdown("---")
-            if st.button("📄 전체 페이지 PDF", use_container_width=True, key="dl_fullpage_pdf"):
-                with st.spinner("전체 페이지 PDF 생성 중..."):
-                    agg_group_state = st.session_state.get("agg_group", "부문")
-                    map_level_state = st.session_state.get("map_level", "부문")
-                    dash_doc_types = st.session_state.get("dash_doc_types", ["총 미스캔"])
-                    dash_chart_mode = st.session_state.get("dash_chart_mode", "그룹형")
-                    dash_top_n = st.session_state.get("dash_top_n", 10)
-                    map_type_state = st.session_state.get("map_type", "🔲 트리맵")
-                    buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, dash_top_n, map_type_state)
-                    st.download_button("⬇️ 전체 페이지 PDF 다운로드", buf_full, f"전체페이지리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
 
     # ── TAB 4 : 관리대장 출력 ─────────────────────────
     with tab_ledger:
