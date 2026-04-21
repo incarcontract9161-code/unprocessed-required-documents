@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio  # [추가] 대시보드 차트 PDF 이미지 삽입용
+import plotly.io as pio  # [추가] PDF 차트 이미지 렌더링용
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
@@ -167,7 +167,6 @@ def build_hierarchy_report(df, months=None):
                 stats = calculate_scan_stats(grp)
                 row = {c: path_vals[i] if i < len(path_vals) else (val if i == level_idx else "") for i, c in enumerate(levels)}
                 row["영업가족"] = ""
-                # 소속/부서/총괄/부문별 소계 구분명 설정
                 if col == "부문": row["구분"] = "부문계"
                 elif col == "총괄": row["구분"] = "총괄계"
                 elif col == "부서": row["구분"] = "부서계"
@@ -181,11 +180,9 @@ def build_hierarchy_report(df, months=None):
     recursive_agg(src, 0, [])
     report = pd.DataFrame(rows)
     
-    # [수정] 소속 기준 정렬 (부문>총괄>부서>소속>영업가족)
     sort_cols = levels + ["영업가족"]
     report = report.sort_values(sort_cols, ascending=True).reset_index(drop=True)
     
-    # [수정] 총계 행 추가
     total_stats = calculate_scan_stats(src)
     total_row = {col: "" for col in report.columns}
     total_row["구분"] = "총계"
@@ -216,7 +213,6 @@ def build_monthly_hierarchy(df, months=None):
     pivoted.columns = [f"{m}_총미스캔" for m in pivoted.columns.get_level_values(1)]
     pivoted = pivoted.reset_index()
     
-    # 월 기준 컬럼 재정렬
     sorted_months = sorted([c.split("_")[0] for c in pivoted.columns if "_총미스캔" in c])
     final_cols = idx_cols + ["구분"] + [f"{m}_총미스캔" for m in sorted_months]
     return pivoted[final_cols]
@@ -343,7 +339,6 @@ def report_excel(df, months):
             if fill: c.fill=fill
         ri += 1
 
-    # 월별 피벗 시트
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
         ws2 = wb.create_sheet("월별_계층집계(피벗)")
@@ -364,7 +359,7 @@ def report_excel(df, months):
 # ==========================================
 def report_pdf(df, months):
     fn, st_, buf = register_korean_font(),  pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12 mm,leftMargin=12 mm, topMargin=12 mm,bottomMargin=12 mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm) # [수정] 구문오류 수정
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     E = [Paragraph("서류 미처리 현황 계층별 집계 ", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today} ", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,6)]
     
@@ -403,7 +398,7 @@ def plotly_to_image(fig, width_mm=160, height_mm=90):
 # ==========================================
 def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="그룹형", dash_top_n=15, map_type="🔲 트리맵"):
     fn, st_, buf = register_korean_font(),  pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10 mm, leftMargin=10 mm, topMargin=10 mm, bottomMargin=10 mm)
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm) # [수정] 구문오류 수정
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
     E = [
         Paragraph("전체 페이지 요약 리포트 ", st_["title"]),
@@ -453,7 +448,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
 # ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(),  pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12 mm,leftMargin=12 mm, topMargin=15 mm,bottomMargin=15 mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm) # [수정] 구문오류 수정
     today = datetime.now().strftime("%Y년 %m월 %d일"); E = []
     center_date_style = ParagraphStyle("CenterDate", parent=st_["date"], alignment=1)
     title_left = ParagraphStyle("TitleLeft", parent=st_["title"], alignment=0)
@@ -835,7 +830,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v5.1 | 개인정보집계제외·가로피벗·차트PDF복구 | © 2026")
+            st.caption("v5.2 | 개인정보집계제외·가로피벗·차트PDF복구·구문오류수정 | © 2026")
         dashboard_page()
 
 if __name__ == "__main__":
