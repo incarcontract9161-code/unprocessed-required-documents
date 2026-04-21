@@ -921,6 +921,12 @@ def dashboard_page():
             div[data-testid="stDataFrame"] table {
                 white-space: nowrap !important;
             }
+            div[data-testid="stDataFrame"] {
+                overflow-x: auto !important;
+            }
+            div[data-testid="stDataFrame"] > div {
+                min-width: 140% !important;
+            }
             div[data-testid="stDataFrame"] [data-testid="stTable"] {
                 font-size: 0.95rem;
             }
