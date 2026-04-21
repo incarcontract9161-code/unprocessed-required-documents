@@ -918,14 +918,17 @@ def dashboard_page():
             disp_df = report_df[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]].copy()
             st.markdown("""
             <style>
+            .main .block-container {
+                max-width: 98rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+                padding-top: 1.5rem !important;
+            }
             div[data-testid="stDataFrame"] table {
                 white-space: nowrap !important;
             }
             div[data-testid="stDataFrame"] {
                 overflow-x: auto !important;
-            }
-            div[data-testid="stDataFrame"] > div {
-                min-width: 140% !important;
             }
             div[data-testid="stDataFrame"] [data-testid="stTable"] {
                 font-size: 0.95rem;
@@ -945,6 +948,22 @@ def dashboard_page():
                 hide_index=True,
                 height=720
             )
+            st.markdown("#### 📅 월별 계층 집계 데이터")
+            monthly_df = build_monthly_hierarchy(df, sel_months)
+            if not monthly_df.empty:
+                st.dataframe(
+                    monthly_df.style.format({
+                        "FA": "{:,}",
+                        "비교": "{:,}",
+                        "완판": "{:,}",
+                        "총미스캔": "{:,}",
+                        "대상건": "{:,}",
+                        "미처리율": "{:.1f}%"
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=420
+                )
             cr1, cr2, cr3 = st.columns(3)
             with cr1:
                 if st.button("📥 계층 리포트 Excel", use_container_width=True):
