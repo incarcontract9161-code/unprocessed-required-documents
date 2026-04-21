@@ -74,7 +74,7 @@ def load_data():
         
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
-        df["FA 고지_c"] = df["FA 고지"].fillna("").astype(str).str.strip()
+        df["FA고지_c"] = df["FA고지"].fillna("").astype(str).str.strip()
         df["비교설명_c"] = df["비교설명"].fillna("").astype(str).str.strip()
         df["완전판매_c"] = df["완전판매"].fillna("").astype(str).str.strip()
 
@@ -85,13 +85,13 @@ def load_data():
             return str(val).strip() in ["스캔", "M 스캔", "미스캔"] if pd.notna(val) and str(val).strip() != "" else False
 
         # [추가] 스캔/대상 플래그 생성 (개인정보 제외)
-        df["FA_스캔"] = df["FA 고지_c"].apply(is_scanned).astype(int)
+        df["FA_스캔"] = df["FA고지_c"].apply(is_scanned).astype(int)
         df["비교_스캔"] = df["비교설명_c"].apply(is_scanned).astype(int)
         df["완판_대상"] = df["완전판매_c"].apply(is_cs_target).astype(int)  # 해당사항없음 제외
         df["완판_스캔"] = df["완전판매_c"].apply(is_scanned).astype(int)
 
         # 기존 미스캔 로직 호환
-        df["FA_miss"] = (df["FA 고지_c"] == "미스캔").astype(int)
+        df["FA_miss"] = (df["FA고지_c"] == "미스캔").astype(int)
         df["비교_miss"] = (df["비교설명_c"] == "미스캔").astype(int)
         df["완판_miss"] = (df["완전판매_c"] == "미스캔").astype(int)
         df["미스캔"] = df[["FA_miss", "비교_miss", "완판_miss"]].sum(axis=1)
