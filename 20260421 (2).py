@@ -460,6 +460,59 @@ def report_pdf(df, months):
     doc.build(E); buf.seek(0); return buf
 
 # ==========================================
+# 8-1. 현재 세팅 기준 전체 페이지 PDF
+# ==========================================
+def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="그룹형", dash_top_n=15, map_type="🔲 트리맵"):
+    fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
+    today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
+    E = [
+        Paragraph("전체 페이지 요약 리포트", st_["title"]),
+        Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
+        Spacer(1, 6),
+    ]
+
+    df_sel = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
+    stats_all = calculate_scan_stats(df_sel)
+    miss_rate = round(100 - stats_all["스캔율"], 1)
+    E.append(Paragraph("▶ 주요 KPI", st_["section"]))
+    E.append(_tbl([
+        ["총 계약건수", f"{stats_all['증번수']:,}"],
+        ["스캔대상건수", f"{stats_all['전체_대상']:,}"],
+        ["전체스캔", f"{stats_all['전체_스캔']:,}"],
+        ["전체미스캔", f"{stats_all['전체_미스캔']:,}"],
+        ["스캔율 / 미처리율", f"{stats_all['스캔율']:.1f}% / {miss_rate:.1f}%"],
+    ], [90, 120], fn, header_rows=0, align="LEFT"))
+    E.append(Spacer(1, 8))
+
+    agg = build_group_scan_stats(df_sel, agg_group).sort_values("총_미스캔", ascending=False).head(dash_top_n)
+    if not agg.empty:
+        E.append(Paragraph(f"▶ 현황 대시보드 집계 ({agg_group})", st_["section"]))
+        hdr = [["조직","대상건","스캔대상건수","전체스캔","총_미스캔","스캔율","미처리율"]]
+        rows = [[r["조직"], f"{int(r['대상건']):,}", f"{int(r['스캔대상건수']):,}", f"{int(r['전체스캔']):,}", f"{int(r['총_미스캔']):,}", f"{r['스캔율']:.1f}%", f"{r['미처리율']:.1f}%"] for _, r in agg.iterrows()]
+        E.append(_tbl(hdr + rows, [80, 40, 52, 40, 40, 36, 36], fn))
+        E.append(Spacer(1, 8))
+
+    map_agg = build_group_scan_stats(df_sel, map_level).rename(columns={"총_미스캔":"미스캔"})
+    map_agg = map_agg[map_agg["미스캔"] > 0].sort_values("미스캔", ascending=False).head(dash_top_n)
+    if not map_agg.empty:
+        E.append(Paragraph(f"▶ 미처리맵 집계 ({map_level})", st_["section"]))
+        hdr = [["조직","대상건","스캔대상건수","전체스캔","미스캔","스캔율","미처리율"]]
+        rows = [[r["조직"], f"{int(r['대상건']):,}", f"{int(r['스캔대상건수']):,}", f"{int(r['전체스캔']):,}", f"{int(r['미스캔']):,}", f"{r['스캔율']:.1f}%", f"{r['미처리율']:.1f}%"] for _, r in map_agg.iterrows()]
+        E.append(_tbl(hdr + rows, [80, 40, 52, 40, 40, 36, 36], fn))
+        E.append(Spacer(1, 8))
+
+    report = build_hierarchy_report(df, months)
+    if not report.empty:
+        E.append(Paragraph("▶ 계층 리포트", st_["section"]))
+        hdr = [["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]]
+        drows = [[r["구분"], r["부문"], r["총괄"], r["부서"], r["영업가족"], f"{int(r['증번수']):,}", f"{int(r['전체대상']):,}", f"{int(r['전체스캔']):,}", f"{int(r['전체미스캔']):,}", f"{r['스캔율']:.1f}%"] for _, r in report.iterrows()]
+        E.append(_tbl(hdr + drows, [30, 40, 40, 40, 55, 22, 24, 24, 24, 22], fn))
+
+    doc.build(E); buf.seek(0); return buf
+
+# ==========================================
 # 9. 관리대장 PDF
 # ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
@@ -863,6 +916,16 @@ def dashboard_page():
                 elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
                 return [""]*len(row)
             disp_df = report_df[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]].copy()
+            st.markdown("""
+            <style>
+            div[data-testid="stDataFrame"] table {
+                white-space: nowrap !important;
+            }
+            div[data-testid="stDataFrame"] [data-testid="stTable"] {
+                font-size: 0.95rem;
+            }
+            </style>
+            """, unsafe_allow_html=True)
             st.caption("스캔 처리: 스캔, M스캔, 보험사스캔 / 완판대상: 스캔, M스캔, 미스캔만 대상")
             st.dataframe(
                 disp_df.style.apply(style_row, axis=1).format({
@@ -874,10 +937,9 @@ def dashboard_page():
                 }),
                 use_container_width=True,
                 hide_index=True,
-                height=500
+                height=720
             )
-            st.divider()
-            cr1, cr2 = st.columns(2)
+            cr1, cr2, cr3 = st.columns(3)
             with cr1:
                 if st.button("📥 계층 리포트 Excel", use_container_width=True):
                     with st.spinner("생성 중..."): buf = report_excel(df, sel_months)
@@ -886,6 +948,16 @@ def dashboard_page():
                 if st.button("📥 계층 리포트 PDF", use_container_width=True):
                     with st.spinner("생성 중..."): buf2 = report_pdf(df, sel_months)
                     st.download_button("⬇️ PDF", buf2, f"계층리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_rpt_pdf")
+            with cr3:
+                if st.button("📄 전체 페이지 PDF", use_container_width=True, key="dl_fullpage_pdf"):
+                    with st.spinner("전체 페이지 PDF 생성 중..."):
+                        agg_group_state = st.session_state.get("agg_group", "부문")
+                        map_level_state = st.session_state.get("map_level", "부문")
+                        dash_doc_types = st.session_state.get("dash_doc_types", ["총 미스캔"])
+                        dash_chart_mode = st.session_state.get("dash_chart_mode", "그룹형")
+                        map_type_state = st.session_state.get("map_type", "🔲 트리맵")
+                        buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, 15, map_type_state)
+                    st.download_button("⬇️ 전체 페이지 PDF", buf_full, f"전체페이지리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
 
     # ── TAB 4 : 관리대장 출력 ─────────────────────────
     with tab_ledger:
