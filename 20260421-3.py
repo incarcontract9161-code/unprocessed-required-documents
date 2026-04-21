@@ -897,7 +897,7 @@ with tab_report:
             return [ " "]*len(row)
         # 수정: 대상스캔건, 스캔율 추가
         disp_df = report_df[[ "구분 ", "부문 ", "총괄 ", "부서 ", "영업가족 ", "증번수 ", "대상건 ", "대상스캔건 ", "전체스캔 ", "스캔율 "]].copy()
-        st.markdown( " " "
+        st.markdown( """
          <style >
         .main .block-container {
             max-width: 98rem !important;
@@ -915,7 +915,7 @@ with tab_report:
             font-size: 0.95rem;
         }
          </style >
-         " " ", unsafe_allow_html=True)
+         """, unsafe_allow_html=True)
         st.caption( "스캔 처리: 스캔, M스캔, 보험사스캔 / 완판대상: 스캔, M스캔, 미스캔만 대상 / 개인정보동의서는 집계 제외 ")
         st.dataframe(
             disp_df.style.apply(style_row, axis=1).format({
