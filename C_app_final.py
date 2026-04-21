@@ -119,6 +119,12 @@ def load_data():
         df["완판_스캔"] = df["완전판매_c"].apply(is_scanned).astype(int)
         df["완판_미스캔"] = df["완전판매_c"].apply(is_not_scanned).astype(int)
         
+        # Dashboard/report code expects these stable aggregation columns.
+        df["FA_miss"] = df["FA怨좎?_c"].apply(is_not_scanned).astype(int)
+        df["비교_miss"] = df["鍮꾧탳?ㅻ챸_c"].apply(is_not_scanned).astype(int)
+        df["완판_miss"] = df["?꾩쟾?먮ℓ_c"].apply(is_not_scanned).astype(int)
+        df["미스캔"] = df[["FA_miss", "비교_miss", "완판_miss"]].sum(axis=1)
+
         return df
     except Exception as e:
         st.error(f"❌ 엑셀 파일 읽기 오류: {e}")
