@@ -1,49 +1,76 @@
 
 # =========================================================
-# 보험 서류 스캔 관리 대시보드 - FINAL STABLE VERSION
-# 요청사항 반영:
-# 1. 개인정보동의서 전체 대상 집계 제외
-# 2. 미스캔 = 비교설명확인서 + FA고지확인서 + 완판확인서만 카운트
-# 3. 월별 계층 집계 가로 Pivot
-# 4. 계층 리포트 소속 정렬 + 소계/총계
-# 5. 표 줄바꿈 제거 + 넓은 테이블
-# 6. 기존 코드 영향 최소 (추가 함수 방식)
+# 보험 서류 스캔 관리 대시보드 - 안정화 최종 버전
+# =========================================================
+# 주요 특징
+# - 엑셀 컬럼 자동 인식 (접수일 / 서류 컬럼)
+# - 개인정보동의서 집계 제외
+# - 미스캔 = FA고지 + 비교설명 + 완판만 계산
+# - 월별 가로 Pivot 테이블
+# - 계층 리포트 정렬
+# - 표 줄바꿈 제거
+# - 오류 방지 로직 다수 추가
 # =========================================================
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import os
-from datetime import datetime
 
-st.set_page_config(page_title="보험 서류 스캔 관리 대시보드", layout="wide")
+st.set_page_config(page_title="보험 스캔 관리 대시보드", layout="wide")
 
 EXCEL_FILE = "insurance_data.xlsx"
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
 
 # -------------------------------------------------
-# UI 스타일 (줄바꿈 방지 + 테이블 확장)
+# UI 스타일
 # -------------------------------------------------
 st.markdown(
-    '''
+"""
 <style>
 table {white-space: nowrap;}
 .block-container {padding-top:1rem;padding-bottom:0rem;}
 </style>
-''',
-    unsafe_allow_html=True,
+""",
+unsafe_allow_html=True
 )
+
+# -------------------------------------------------
+# 컬럼 자동 찾기
+# -------------------------------------------------
+def find_column(df, keywords):
+
+    for col in df.columns:
+        c = str(col).strip()
+        for k in keywords:
+            if k in c:
+                return col
+    return None
 
 # -------------------------------------------------
 # 데이터 로드
 # -------------------------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_excel(EXCEL_FILE)
-    df["접수일"] = pd.to_datetime(df["접수일"])
-    df["월"] = df["접수일"].dt.to_period("M").astype(str)
-    return df
 
+    if not os.path.exists(EXCEL_FILE):
+        st.error(f"엑셀 파일을 찾을 수 없습니다: {EXCEL_FILE}")
+        st.stop()
+
+    df = pd.read_excel(EXCEL_FILE)
+
+    df.columns = df.columns.astype(str).str.strip()
+
+    # 접수일 자동 탐지
+    date_col = find_column(df, ["접수일", "접수일자", "접수일시"])
+
+    if date_col is None:
+        st.error(f"접수일 컬럼을 찾지 못했습니다. 현재 컬럼: {list(df.columns)}")
+        st.stop()
+
+    df["접수일"] = pd.to_datetime(df[date_col], errors="coerce")
+
+    df["월"] = df["접수일"].dt.to_period("M").astype(str)
+
+    return df
 
 # -------------------------------------------------
 # 미스캔 계산
@@ -52,9 +79,17 @@ def calculate_miss_scan(df):
 
     df = df.copy()
 
-    df["FA_miss"] = df["FA고지확인서"].astype(str).str.contains("미스캔")
-    df["비교_miss"] = df["비교설명확인서"].astype(str).str.contains("미스캔")
-    df["완판_miss"] = df["완판확인서"].astype(str).str.contains("미스캔")
+    fa_col = find_column(df, ["FA"])
+    comp_col = find_column(df, ["비교"])
+    sale_col = find_column(df, ["완판"])
+
+    if fa_col is None or comp_col is None or sale_col is None:
+        st.error("서류 컬럼을 찾을 수 없습니다.")
+        st.stop()
+
+    df["FA_miss"] = df[fa_col].astype(str).str.contains("미스캔", na=False)
+    df["비교_miss"] = df[comp_col].astype(str).str.contains("미스캔", na=False)
+    df["완판_miss"] = df[sale_col].astype(str).str.contains("미스캔", na=False)
 
     df["미스캔"] = (
         df["FA_miss"].astype(int)
@@ -64,17 +99,20 @@ def calculate_miss_scan(df):
 
     return df
 
-
 # -------------------------------------------------
-# 전체 대상 계산 (개인정보 제외)
+# 대상 계산 (개인정보 제외)
 # -------------------------------------------------
-def calculate_total_target(df):
+def calculate_targets(df):
 
     df = df.copy()
 
-    df["FA_target"] = df["FA고지확인서"].notna()
-    df["비교_target"] = df["비교설명확인서"].notna()
-    df["완판_target"] = df["완판확인서"].notna()
+    fa_col = find_column(df, ["FA"])
+    comp_col = find_column(df, ["비교"])
+    sale_col = find_column(df, ["완판"])
+
+    df["FA_target"] = df[fa_col].notna()
+    df["비교_target"] = df[comp_col].notna()
+    df["완판_target"] = df[sale_col].notna()
 
     df["전체대상"] = (
         df["FA_target"].astype(int)
@@ -84,63 +122,80 @@ def calculate_total_target(df):
 
     return df
 
-
 # -------------------------------------------------
 # 계층 리포트
 # -------------------------------------------------
 def build_hierarchy_report(df):
 
-    group_cols = ["부문", "총괄", "부서", "영업가족"]
+    hierarchy = []
+
+    for c in df.columns:
+        if "부문" in c:
+            hierarchy.append(c)
+        elif "총괄" in c:
+            hierarchy.append(c)
+        elif "부서" in c:
+            hierarchy.append(c)
+        elif "소속" in c or "영업" in c:
+            hierarchy.append(c)
+
+    if len(hierarchy) == 0:
+        st.warning("계층 컬럼을 찾지 못했습니다.")
+        return pd.DataFrame()
 
     agg = (
-        df.groupby(group_cols)
+        df.groupby(hierarchy)
         .agg(
-            계약수=("증번", "count"),
+            계약수=("월", "count"),
             미스캔=("미스캔", "sum"),
-            대상=("전체대상", "sum"),
+            대상=("전체대상", "sum")
         )
         .reset_index()
     )
 
-    agg["스캔율"] = (
-        (agg["대상"] - agg["미스캔"]) / agg["대상"] * 100
-    ).round(1)
+    agg["스캔율"] = ((agg["대상"] - agg["미스캔"]) / agg["대상"] * 100).round(1)
 
-    return agg.sort_values(group_cols)
-
+    return agg.sort_values(hierarchy)
 
 # -------------------------------------------------
 # 월별 Pivot
 # -------------------------------------------------
 def monthly_pivot(df):
 
+    dept_col = None
+
+    for c in df.columns:
+        if "부문" in c or "조직" in c:
+            dept_col = c
+            break
+
+    if dept_col is None:
+        dept_col = df.columns[0]
+
     p = (
-        df.groupby(["부문", "월"])["미스캔"]
+        df.groupby([dept_col, "월"])["미스캔"]
         .sum()
         .reset_index()
-        .pivot(index="부문", columns="월", values="미스캔")
+        .pivot(index=dept_col, columns="월", values="미스캔")
         .fillna(0)
     )
 
     return p.reset_index()
 
-
 # -------------------------------------------------
-# 로그인
+# KPI
 # -------------------------------------------------
-def login():
+def show_kpi(df):
 
-    st.title("🔐 시스템 접속")
+    total_contract = len(df)
+    total_miss = int(df["미스캔"].sum())
+    total_target = int(df["전체대상"].sum())
 
-    pw = st.text_input("비밀번호", type="password")
+    c1, c2, c3 = st.columns(3)
 
-    if st.button("접속"):
-        if pw == APP_PASSWORD:
-            st.session_state.login = True
-            st.rerun()
-        else:
-            st.error("비밀번호 오류")
-
+    c1.metric("총 계약건", total_contract)
+    c2.metric("총 미스캔", total_miss)
+    c3.metric("전체 대상", total_target)
 
 # -------------------------------------------------
 # 메인 대시보드
@@ -150,15 +205,11 @@ def dashboard():
     df = load_data()
 
     df = calculate_miss_scan(df)
-    df = calculate_total_target(df)
+    df = calculate_targets(df)
 
-    st.title("📊 보험 서류 스캔 관리 대시보드")
+    st.title("보험 서류 스캔 관리 대시보드")
 
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("총 계약", len(df))
-    c2.metric("총 미스캔", int(df["미스캔"].sum()))
-    c3.metric("전체 대상", int(df["전체대상"].sum()))
+    show_kpi(df)
 
     st.divider()
 
@@ -171,7 +222,7 @@ def dashboard():
         st.dataframe(
             rpt,
             use_container_width=True,
-            height=700,
+            height=700
         )
 
     with tab2:
@@ -180,17 +231,10 @@ def dashboard():
 
         st.dataframe(
             pivot,
-            use_container_width=True,
+            use_container_width=True
         )
-
 
 # -------------------------------------------------
 # 실행
 # -------------------------------------------------
-if "login" not in st.session_state:
-    st.session_state.login = False
-
-if not st.session_state.login:
-    login()
-else:
-    dashboard()
+dashboard()
