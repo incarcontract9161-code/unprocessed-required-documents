@@ -119,11 +119,23 @@ def load_data():
         df["완판_스캔"] = df["완전판매_c"].apply(is_scanned).astype(int)
         df["완판_미스캔"] = df["완전판매_c"].apply(is_not_scanned).astype(int)
         
-        # Dashboard/report code expects these stable aggregation columns.
-        df["FA_miss"] = df["FA고지_c"].apply(is_not_scanned).astype(int)
-        df["비교_miss"] = df["비교설명_c"].apply(is_not_scanned).astype(int)
-        df["완판_miss"] = df["완전판매_c"].apply(is_not_scanned).astype(int)
-        df["미스캔"] = df[["FA_miss", "비교_miss", "완판_miss"]].sum(axis=1)
+        # 집계 기준은 "증권번호 수"가 아니라 "증권번호별 필수 서류 수"입니다.
+        # 개인정보동의서는 항상 필수 제출 대상으로 간주되어 별도 집계에서 제외합니다.
+        df["FA_target"] = 1
+        df["비교_target"] = 1
+        df["완판_target"] = df["완판_대상"]
+
+        df["FA_scan"] = df["FA고지_스캔"]
+        df["비교_scan"] = df["비교설명_스캔"]
+        df["완판_scan"] = df["완판_스캔"]
+
+        df["FA_miss"] = (df["FA_target"] - df["FA_scan"]).clip(lower=0).astype(int)
+        df["비교_miss"] = (df["비교_target"] - df["비교_scan"]).clip(lower=0).astype(int)
+        df["완판_miss"] = (df["완판_target"] - df["완판_scan"]).clip(lower=0).astype(int)
+
+        df["대상건"] = df[["FA_target", "비교_target", "완판_target"]].sum(axis=1).astype(int)
+        df["스캔건"] = df[["FA_scan", "비교_scan", "완판_scan"]].sum(axis=1).astype(int)
+        df["미스캔"] = df[["FA_miss", "비교_miss", "완판_miss"]].sum(axis=1).astype(int)
 
         return df
     except Exception as e:
@@ -199,28 +211,28 @@ def build_hierarchy_report(df, months=None):
     rows = []
     for bm, df_bm in src.groupby("부문"):
         fa = int(df_bm["FA_miss"].sum()); bi = int(df_bm["비교_miss"].sum()); cs = int(df_bm["완판_miss"].sum())
-        tot = fa + bi + cs; cnt = len(df_bm)
+        tot = fa + bi + cs; cnt = int(df_bm["대상건"].sum()); scan = int(df_bm["스캔건"].sum())
         rows.append({"구분":"부문계", "부문":bm, "총괄":"", "부서":"", "영업가족":"",
-                     "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot, "대상건":cnt,
-                     "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
+                     "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot, "대상건":cnt, "스캔건":scan,
+                     "미처리율":round(tot/cnt*100,1) if cnt else 0.0, "스캔율":round(scan/cnt*100,1) if cnt else 0.0})
         for tg, df_tg in df_bm.groupby("총괄"):
             fa2 = int(df_tg["FA_miss"].sum()); bi2 = int(df_tg["비교_miss"].sum()); cs2 = int(df_tg["완판_miss"].sum())
-            tot2 = fa2 + bi2 + cs2; cnt2 = len(df_tg)
+            tot2 = fa2 + bi2 + cs2; cnt2 = int(df_tg["대상건"].sum()); scan2 = int(df_tg["스캔건"].sum())
             rows.append({"구분":"총괄계", "부문":bm, "총괄":tg, "부서":"", "영업가족":"",
-                         "FA":fa2, "비교":bi2, "완판":cs2, "총미스캔":tot2, "대상건":cnt2,
-                         "미처리율":round(tot2/cnt2*100,1) if cnt2 else 0.0})
+                         "FA":fa2, "비교":bi2, "완판":cs2, "총미스캔":tot2, "대상건":cnt2, "스캔건":scan2,
+                         "미처리율":round(tot2/cnt2*100,1) if cnt2 else 0.0, "스캔율":round(scan2/cnt2*100,1) if cnt2 else 0.0})
             for ds, df_ds in df_tg.groupby("부서"):
                 fa3 = int(df_ds["FA_miss"].sum()); bi3 = int(df_ds["비교_miss"].sum()); cs3 = int(df_ds["완판_miss"].sum())
-                tot3 = fa3 + bi3 + cs3; cnt3 = len(df_ds)
+                tot3 = fa3 + bi3 + cs3; cnt3 = int(df_ds["대상건"].sum()); scan3 = int(df_ds["스캔건"].sum())
                 rows.append({"구분":"부서계", "부문":bm, "총괄":tg, "부서":ds, "영업가족":"",
-                             "FA":fa3, "비교":bi3, "완판":cs3, "총미스캔":tot3, "대상건":cnt3,
-                             "미처리율":round(tot3/cnt3*100,1) if cnt3 else 0.0})
+                             "FA":fa3, "비교":bi3, "완판":cs3, "총미스캔":tot3, "대상건":cnt3, "스캔건":scan3,
+                             "미처리율":round(tot3/cnt3*100,1) if cnt3 else 0.0, "스캔율":round(scan3/cnt3*100,1) if cnt3 else 0.0})
                 for fg, df_fg in df_ds.groupby("영업가족"):
                     fa4 = int(df_fg["FA_miss"].sum()); bi4 = int(df_fg["비교_miss"].sum()); cs4 = int(df_fg["완판_miss"].sum())
-                    t4 = fa4 + bi4 + cs4; c4 = len(df_fg)
+                    t4 = fa4 + bi4 + cs4; c4 = int(df_fg["대상건"].sum()); s4 = int(df_fg["스캔건"].sum())
                     rows.append({"구분":"영업가족", "부문":bm, "총괄":tg, "부서":ds, "영업가족":fg,
-                                 "FA":fa4, "비교":bi4, "완판":cs4, "총미스캔":t4, "대상건":c4,
-                                 "미처리율":round(t4/c4*100,1) if c4 else 0.0})
+                                 "FA":fa4, "비교":bi4, "완판":cs4, "총미스캔":t4, "대상건":c4, "스캔건":s4,
+                                 "미처리율":round(t4/c4*100,1) if c4 else 0.0, "스캔율":round(s4/c4*100,1) if c4 else 0.0})
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=300)
@@ -231,20 +243,22 @@ def build_monthly_hierarchy(df, months=None):
     for mon, dm in src.groupby("월_피리어드"):
         for bm, db in dm.groupby("부문"):
             fa_b = int(db["FA_miss"].sum()); bi_b = int(db["비교_miss"].sum()); cs_b = int(db["완판_miss"].sum())
+            target_b = int(db["대상건"].sum()); scan_b = int(db["스캔건"].sum())
             rows.append({"월":mon, "구분":"부문계", "부문":bm, "총괄":"", "부서":"",
                          "FA":fa_b, "비교":bi_b, "완판":cs_b, "총미스캔":fa_b+bi_b+cs_b,
-                         "대상건":len(db), "미처리율":round((fa_b+bi_b+cs_b)/len(db)*100,1) if len(db) else 0.0})
+                         "대상건":target_b, "스캔건":scan_b, "미처리율":round((fa_b+bi_b+cs_b)/target_b*100,1) if target_b else 0.0, "스캔율":round(scan_b/target_b*100,1) if target_b else 0.0})
             for tg, dt in db.groupby("총괄"):
                 fa_t = int(dt["FA_miss"].sum()); bi_t = int(dt["비교_miss"].sum()); cs_t = int(dt["완판_miss"].sum())
+                target_t = int(dt["대상건"].sum()); scan_t = int(dt["스캔건"].sum())
                 rows.append({"월":mon, "구분":"총괄계", "부문":bm, "총괄":tg, "부서":"",
                              "FA":fa_t, "비교":bi_t, "완판":cs_t, "총미스캔":fa_t+bi_t+cs_t,
-                             "대상건":len(dt), "미처리율":round((fa_t+bi_t+cs_t)/len(dt)*100,1) if len(dt) else 0.0})
+                             "대상건":target_t, "스캔건":scan_t, "미처리율":round((fa_t+bi_t+cs_t)/target_t*100,1) if target_t else 0.0, "스캔율":round(scan_t/target_t*100,1) if target_t else 0.0})
                 for ds, dd in dt.groupby("부서"):
                     fa = int(dd["FA_miss"].sum()); bi = int(dd["비교_miss"].sum()); cs = int(dd["완판_miss"].sum())
-                    tot = fa + bi + cs; cnt = len(dd)
+                    tot = fa + bi + cs; cnt = int(dd["대상건"].sum()); scan = int(dd["스캔건"].sum())
                     rows.append({"월":mon, "구분":"부서계", "부문":bm, "총괄":tg, "부서":ds,
                                  "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
-                                 "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
+                                 "대상건":cnt, "스캔건":scan, "미처리율":round(tot/cnt*100,1) if cnt else 0.0, "스캔율":round(scan/cnt*100,1) if cnt else 0.0})
     return pd.DataFrame(rows)
 
 @st.cache_data(ttl=300)
@@ -255,24 +269,26 @@ def build_monthly_hierarchy_pivot(df, months=None):
     for mon, dm in src.groupby("월_피리어드"):
         for bm, db in dm.groupby("부문"):
             fa_b = int(db["FA_miss"].sum()); bi_b = int(db["비교_miss"].sum()); cs_b = int(db["완판_miss"].sum())
+            target_b = int(db["대상건"].sum()); scan_b = int(db["스캔건"].sum())
             rows.append({"월":mon, "구분":"부문계", "부문":bm, "총괄":"", "부서":"",
                          "FA":fa_b, "비교":bi_b, "완판":cs_b, "총미스캔":fa_b+bi_b+cs_b,
-                         "대상건":len(db), "미처리율":round((fa_b+bi_b+cs_b)/len(db)*100,1) if len(db) else 0.0})
+                         "대상건":target_b, "스캔건":scan_b, "미처리율":round((fa_b+bi_b+cs_b)/target_b*100,1) if target_b else 0.0, "스캔율":round(scan_b/target_b*100,1) if target_b else 0.0})
             for tg, dt in db.groupby("총괄"):
                 fa_t = int(dt["FA_miss"].sum()); bi_t = int(dt["비교_miss"].sum()); cs_t = int(dt["완판_miss"].sum())
+                target_t = int(dt["대상건"].sum()); scan_t = int(dt["스캔건"].sum())
                 rows.append({"월":mon, "구분":"총괄계", "부문":bm, "총괄":tg, "부서":"",
                              "FA":fa_t, "비교":bi_t, "완판":cs_t, "총미스캔":fa_t+bi_t+cs_t,
-                             "대상건":len(dt), "미처리율":round((fa_t+bi_t+cs_t)/len(dt)*100,1) if len(dt) else 0.0})
+                             "대상건":target_t, "스캔건":scan_t, "미처리율":round((fa_t+bi_t+cs_t)/target_t*100,1) if target_t else 0.0, "스캔율":round(scan_t/target_t*100,1) if target_t else 0.0})
                 for ds, dd in dt.groupby("부서"):
                     fa = int(dd["FA_miss"].sum()); bi = int(dd["비교_miss"].sum()); cs = int(dd["완판_miss"].sum())
-                    tot = fa + bi + cs; cnt = len(dd)
+                    tot = fa + bi + cs; cnt = int(dd["대상건"].sum()); scan = int(dd["스캔건"].sum())
                     rows.append({"월":mon, "구분":"부서계", "부문":bm, "총괄":tg, "부서":ds,
                                  "FA":fa, "비교":bi, "완판":cs, "총미스캔":tot,
-                                 "대상건":cnt, "미처리율":round(tot/cnt*100,1) if cnt else 0.0})
+                                 "대상건":cnt, "스캔건":scan, "미처리율":round(tot/cnt*100,1) if cnt else 0.0, "스캔율":round(scan/cnt*100,1) if cnt else 0.0})
     pivot_src = pd.DataFrame(rows)
     if pivot_src.empty:
         return pivot_src
-    metrics = ["FA","비교","완판","총미스캔","대상건","미처리율"]
+    metrics = ["FA","비교","완판","총미스캔","대상건","스캔건","미처리율","스캔율"]
     pivot_frames = []
     month_order = sorted(src["월_피리어드"].dropna().unique())
     for metric in metrics:
@@ -296,7 +312,7 @@ def get_ledger_targets(df, months):
     if src.empty: return {}
     agg = src.groupby(["부문", "총괄", "부서", "영업가족"]).agg(
         FA=("FA_miss", "sum"), 비교=("비교_miss", "sum"),
-        완판=("완판_miss", "sum"), 대상=("증권번호", "count")
+        완판=("완판_miss", "sum"), 대상=("대상건", "sum"), 스캔=("스캔건", "sum")
     ).reset_index()
     agg["총미스캔"] = agg[["FA", "비교", "완판"]].sum(axis=1)
     agg = agg[agg["총미스캔"] > 0]
@@ -555,95 +571,135 @@ def report_pdf(df, months):
 # ==========================================
 # 9. 전체 페이지 PDF
 
-def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="그룹형", dash_top_n=15, map_type="🔲 트리맵"):
+def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="???", dash_top_n=15, map_type="???"):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
-    today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
-    E = [Paragraph("전체 페이지 요약 리포트", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,8)]
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm, leftMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
+    today = datetime.now().strftime("%Y? %m? %d?")
+    period_str = ", ".join(months) if months else "??"
+    E = [
+        Paragraph("?? ??? ?? ???", st_["title"]),
+        Paragraph(f"??: {period_str}  |  ????: {today}", st_["date"]),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
+        Spacer(1, 8),
+    ]
 
-    df_sel = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
-    fa_t, bi_t, cs_t = int(df_sel["FA_miss"].sum()), int(df_sel["비교_miss"].sum()), int(df_sel["완판_miss"].sum())
-    tot = fa_t + bi_t + cs_t
-    rate = round((tot / len(df_sel) * 100), 1) if len(df_sel) else 0.0
-    E.append(Paragraph("▶ 주요 KPI", st_["section"]))
-    summary = [["총 계약건수", f"{len(df_sel):,}"], ["총 미처리건수", f"{tot:,}"], ["미처리율", f"{rate:.1f}%"], ["FA/비교/완판", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"]]
-    E.append(_tbl([[s[0], s[1]] for s in summary], [90, 150], fn, header_rows=0, align="LEFT")); E.append(Spacer(1,8))
+    df_sel = df[df["?_????"].isin(months)].copy() if months else df.copy()
+    fa_t = int(df_sel["FA_miss"].sum())
+    bi_t = int(df_sel["??_miss"].sum())
+    cs_t = int(df_sel["??_miss"].sum())
+    miss_total = int(df_sel["???"].sum())
+    target_total = int(df_sel["???"].sum())
+    scan_total = int(df_sel["???"].sum())
+    miss_rate = round(miss_total / target_total * 100, 1) if target_total else 0.0
+    scan_rate = round(scan_total / target_total * 100, 1) if target_total else 0.0
 
-    dash_doc_types = dash_doc_types or ["총 미스캔"]
-    agg = df_sel.groupby(agg_group).agg(FA고지_미스캔=("FA_miss","sum"), 비교설명_미스캔=("비교_miss","sum"), 완전판매_미스캔=("완판_miss","sum"), 대상건=("증권번호","count")).reset_index()
-    agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
-    agg["미처리율"] = (agg["총_미스캔"] / agg["대상건"] * 100).round(1)
-    agg = agg.rename(columns={agg_group: "조직"})
-    agg = agg.sort_values("총_미스캔", ascending=False).head(dash_top_n)
+    E.append(Paragraph("?? KPI", st_["section"]))
+    summary = [
+        ["? ????", f"{len(df_sel):,}"],
+        ["? ?????", f"{target_total:,}"],
+        ["? ?????", f"{miss_total:,}"],
+        ["???? / ???", f"{miss_rate:.1f}% / {scan_rate:.1f}%"],
+        ["FA / ?? / ??", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"],
+    ]
+    E.append(_tbl(summary, [90, 150], fn, header_rows=0, align="LEFT"))
+    E.append(Spacer(1, 8))
+
+    dash_doc_types = dash_doc_types or ["? ???"]
+    agg = df_sel.groupby(agg_group).agg(
+        fa_miss_sum=("FA_miss", "sum"),
+        bi_miss_sum=("??_miss", "sum"),
+        cs_miss_sum=("??_miss", "sum"),
+        target_sum=("???", "sum"),
+        scan_sum=("???", "sum"),
+    ).reset_index()
+    agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
+    agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
+    agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
+    agg = agg.rename(columns={
+        agg_group: "??",
+        "fa_miss_sum": "FA??_???",
+        "bi_miss_sum": "????_???",
+        "cs_miss_sum": "????_???",
+        "target_sum": "???",
+        "scan_sum": "???",
+        "total_miss": "?_???",
+        "miss_rate": "????",
+        "scan_rate": "???",
+    }).sort_values("?_???", ascending=False).head(dash_top_n)
+
     if not agg.empty:
-        E.append(Paragraph(f"▶ 현황 대시보드 차트 (집계: {agg_group})", st_["section"]))
-        hdr = [["조직", "총_미스캔", "미처리율", "FA고지", "비교설명", "완전판매", "대상건"]]
-        rows = [[r["조직"], f"{int(r['총_미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA고지_미스캔']):,}", f"{int(r['비교설명_미스캔']):,}", f"{int(r['완전판매_미스캔']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
-        E.append(_tbl(hdr + rows, [90, 60, 42, 42, 42, 42, 42], fn)); E.append(Spacer(1,8))
-        try:
-            if len(dash_doc_types)==1 and dash_doc_types[0]=="총 미스캔":
-                fig_dash = go.Figure()
-                fig_dash.add_trace(go.Bar(x=agg["조직"], y=agg["총_미스캔"], text=agg["총_미스캔"], textposition="outside", marker_color=agg["총_미스캔"], marker_colorscale="Reds"))
-                fig_dash.update_layout(title=f"미처리 건수 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캔"].max()*1.2 if agg["총_미스캔"].max()>0 else 10]), height=340)
-            elif len(dash_doc_types)==1:
-                cm = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔"}
-                fig_dash = px.bar(agg, x="조직", y=cm[dash_doc_types[0]], title=f"{dash_doc_types[0]} 미스캔 TOP {dash_top_n}", text=cm[dash_doc_types[0]], color=cm[dash_doc_types[0]], color_continuous_scale="Blues")
-                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
-            else:
-                cm2 = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔","총 미스캔":"총_미스캔"}
-                p = agg[["조직"]+[cm2[d] for d in dash_doc_types]].copy()
-                p.columns=["조직"]+dash_doc_types
-                p = p.melt("조직", var_name="종류", value_name="건수")
-                fig_dash = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if dash_chart_mode=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
-                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
-            _append_pdf_figure(E, fig_dash, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"현황 차트 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
-        try:
-            fig_trend = go.Figure(); fig_trend.add_trace(go.Scatter(x=agg["조직"], y=agg["총_미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
-            fig_trend.update_layout(title=f"미처리 건수 추이 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캔"].max()*1.2 if agg["총_미스캔"].max()>0 else 10]), height=340)
-            _append_pdf_figure(E, fig_trend, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"추이 차트 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
+        E.append(Paragraph(f"?? ???? ?? ({agg_group})", st_["section"]))
+        hdr = [["??", "???", "???", "?_???", "????", "???", "FA??", "????", "????"]]
+        rows = [[
+            r["??"],
+            f"{int(r['???']):,}",
+            f"{int(r['???']):,}",
+            f"{int(r['?_???']):,}",
+            f"{r['????']:.1f}%",
+            f"{r['???']:.1f}%",
+            f"{int(r['FA??_???']):,}",
+            f"{int(r['????_???']):,}",
+            f"{int(r['????_???']):,}",
+        ] for _, r in agg.iterrows()]
+        E.append(_tbl(hdr + rows, [84, 48, 48, 52, 45, 45, 42, 42, 42], fn))
+        E.append(Spacer(1, 8))
 
-    map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔","sum"), 대상건=("증권번호","count")).reset_index()
-    map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
-    map_agg = map_agg.sort_values("미스캔", ascending=False).head(dash_top_n)
+    map_agg = df_sel.groupby(map_level).agg(
+        miss_sum=("???", "sum"),
+        target_sum=("???", "sum"),
+        scan_sum=("???", "sum"),
+    ).reset_index()
+    map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
+    map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
+    map_agg = map_agg.rename(columns={
+        map_level: "??",
+        "miss_sum": "???",
+        "target_sum": "???",
+        "scan_sum": "???",
+        "miss_rate": "????",
+        "scan_rate": "???",
+    }).sort_values("???", ascending=False).head(dash_top_n)
+
     if not map_agg.empty:
-        E.append(Paragraph(f"▶ {map_level}별 미스캔 분포 요약 ({map_type})", st_["section"]))
-        hdr = [[map_level, "미스캔", "미처리율", "대상건"]]
-        rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
-        E.append(_tbl(hdr + rows, [100, 55, 55, 55], fn)); E.append(Spacer(1,8))
-        try:
-            if map_type == "🥧 원그래프":
-                fig_map = px.pie(map_agg, values="미스캔", names=map_level, title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
-                fig_map.update_traces(textposition='inside', textinfo='percent+label')
-            else:
-                fig_map = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미스캔 분포", color_continuous_scale="RdYlGn_r")
-            fig_map.update_layout(margin=dict(l=20,r=20,t=35,b=20), width=1000, height=340)
-            _append_pdf_figure(E, fig_map, st_, max_width=1000, height=340)
-        except Exception as e:
-            E.append(Paragraph(f"미처리맵 생성 중 오류: {e}", st_["notice"]))
-            E.append(Spacer(1,6))
+        E.append(Paragraph(f"{map_level}? ??? ??", st_["section"]))
+        hdr = [["??", "???", "???", "???", "????", "???"]]
+        rows = [[
+            r["??"],
+            f"{int(r['???']):,}",
+            f"{int(r['???']):,}",
+            f"{int(r['???']):,}",
+            f"{r['????']:.1f}%",
+            f"{r['???']:.1f}%",
+        ] for _, r in map_agg.iterrows()]
+        E.append(_tbl(hdr + rows, [100, 55, 55, 55, 55, 55], fn))
+        E.append(Spacer(1, 8))
+
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
-        E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 리포트", st_["section"]))
+        E.append(PageBreak())
+        E.append(Paragraph("?? ??? ?? ???", st_["section"]))
         headers = pivot.columns.tolist()
         rows = []
         for _, pr in pivot.iterrows():
-            rows.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
+            row = []
+            for v in pr.tolist():
+                if isinstance(v, (int, float)) and not pd.isna(v):
+                    row.append(f"{v:.1f}%" if isinstance(v, float) and abs(v) <= 100 and any(str(v).endswith(s) for s in [".0", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]) else f"{int(v):,}")
+                else:
+                    row.append(str(v))
+            rows.append(row)
         fixed = [30, 30, 35, 45]
         month_cols = max(1, len(headers) - 4)
         remaining = max(12, int((542 - sum(fixed)) / month_cols))
         widths = fixed + [remaining] * month_cols
         E.append(_tbl([headers] + rows, widths, fn))
 
-    doc.build(E); buf.seek(0); return buf
+    doc.build(E)
+    buf.seek(0)
+    return buf
 
 # ==========================================
-# 9. 관리대장 PDF
+# 9. ???? PDF
 # ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
@@ -892,249 +948,326 @@ def login_page():
 # 12. 통합 대시보드
 # ==========================================
 def dashboard_page():
-    st.title("📊 서류 처리 현황 대시보드")
-    
-    # 데이터 로드
+    st.title("????")
+
     df = load_data()
-    
     if df.empty:
-        st.warning("📭 데이터가 없습니다. GitHub에 'insurance_data.xlsx' 파일을 업로드해주세요.")
-        st.info("""
-        **데이터 업로드 방법:**
-        1. GitHub 저장소에 `insurance_data.xlsx` 파일 업로드
-        2. Git commit & push
-        3. Streamlit Cloud가 자동으로 재배포 (1-2분 소요)
-        4. 페이지 새로고침
-        """)
+        st.warning("???? ????. insurance_data.xlsx ??? ??? ???.")
         return
-    
-    # 상태바
+
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        st.success(f"✅ 총 **{len(df):,}건**의 데이터 로드 완료")
+        st.success(f"? {len(df):,}?? ??? ?? ??")
     with col2:
-        st.info(f"📅 기준: **{get_file_update_time()}**")
+        st.info(f"??: {get_file_update_time()}")
     with col3:
-        if st.button("🔄 새로고침"):
+        if st.button("????"):
             st.cache_data.clear()
             st.rerun()
-    
-    # 기간 선택
-    all_months = sorted(df["월_피리어드"].dropna().unique())
-    st.subheader("📅 분석 기간 선택")
-    sel_months = st.multiselect("월 선택 (복수 가능)", all_months, default=[all_months[-1]] if all_months else [])
-    
+
+    all_months = sorted(df["?_????"].dropna().unique())
+    st.subheader("?? ?? ??")
+    sel_months = st.multiselect("? ??", all_months, default=[all_months[-1]] if all_months else [])
     if not sel_months:
-        st.warning("⚠️ 최소 1개 이상의 월을 선택해주세요.")
-        return
-    
-    period_text = f"{sel_months[0]} ~ {sel_months[-1]}" if len(sel_months) > 1 else sel_months[0]
-    df_sel = df[df["월_피리어드"].isin(sel_months)].copy()
-    
-    if df_sel.empty:
-        st.info("선택한 기간에 데이터가 없습니다.")
+        st.warning("?? 1? ??? ?? ??? ???.")
         return
 
-    # KPI 메트릭
-    fa_t, bi_t, cs_t = int(df_sel["FA_miss"].sum()), int(df_sel["비교_miss"].sum()), int(df_sel["완판_miss"].sum())
-    tot, rate = fa_t+bi_t+cs_t, round((fa_t+bi_t+cs_t)/len(df_sel)*100,1) if len(df_sel)>0 else 0.0
-    m1,m2,m3,m4 = st.columns(4)
-    m1.metric("📄 총 계약건수", f"{len(df_sel):,}건")
-    m2.metric("⚠️ 총 미처리건수", f"{tot:,}건")
-    m3.metric("📉 미처리율", f"{rate:.1f}%")
-    m4.metric("FA / 비교 / 완판", f"{fa_t} / {bi_t} / {cs_t}")
+    period_text = f"{sel_months[0]} ~ {sel_months[-1]}" if len(sel_months) > 1 else sel_months[0]
+    df_sel = df[df["?_????"].isin(sel_months)].copy()
+    if df_sel.empty:
+        st.info("??? ??? ???? ????.")
+        return
+
+    fa_t = int(df_sel["FA_miss"].sum())
+    bi_t = int(df_sel["??_miss"].sum())
+    cs_t = int(df_sel["??_miss"].sum())
+    miss_total = int(df_sel["???"].sum())
+    target_total = int(df_sel["???"].sum())
+    scan_total = int(df_sel["???"].sum())
+    miss_rate = round(miss_total / target_total * 100, 1) if target_total else 0.0
+    scan_rate = round(scan_total / target_total * 100, 1) if target_total else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("? ????", f"{len(df_sel):,}?")
+    m2.metric("? ?????", f"{target_total:,}?")
+    m3.metric("????", f"{miss_rate:.1f}%")
+    m4.metric("???", f"{scan_rate:.1f}%")
+    st.caption(f"FA / ?? / ?? ???: {fa_t:,} / {bi_t:,} / {cs_t:,}")
     st.divider()
 
-    # 탭 구성 (데이터 관리 탭 제거)
-    tab_dash, tab_map, tab_report, tab_ledger = st.tabs([
-        "📈 현황 대시보드", "🗺️ 미처리맵", "📊 계층 리포트", "📋 관리대장 출력"
-    ])
+    tab_dash, tab_map, tab_report, tab_ledger = st.tabs(["?? ????", "????", "?? ???", "???? ??"])
 
-    # ── TAB 1 : 현황 대시보드 ─────────────────────────
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
-        with cs1: search_text = st.text_input("🔍 조직 검색", placeholder="조직명 입력...")
-        with cs2: agg_group = st.selectbox("집계 기준 (랭킹 단위)", ["부문","총괄","부서","영업가족"], key="agg_group")
+        with cs1:
+            search_text = st.text_input("?? ??", placeholder="??? ??")
+        with cs2:
+            agg_group = st.selectbox("?? ??", ["??", "??", "??", "????"], key="agg_group")
+
         agg = df_sel.groupby(agg_group).agg(
-            FA고지_미스캔=("FA_miss","sum"),
-            비교설명_미스캔=("비교_miss","sum"),
-            완전판매_미스캔=("완판_miss","sum"),
-            대상건=("증권번호","count")
+            fa_miss_sum=("FA_miss", "sum"),
+            bi_miss_sum=("??_miss", "sum"),
+            cs_miss_sum=("??_miss", "sum"),
+            target_sum=("???", "sum"),
+            scan_sum=("???", "sum"),
         ).reset_index()
-        agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
-        agg["미처리율"] = (agg["총_미스캔"]/agg["대상건"]*100).round(1)
-        agg = agg.rename(columns={agg_group:"조직"})
-        if search_text: agg = agg[agg["조직"].astype(str).str.contains(search_text, case=False, na=False)]
-        agg = agg.sort_values("총_미스캔", ascending=False).reset_index(drop=True); agg.insert(0,"순위",range(1,len(agg)+1))
-        if agg.empty: st.info("조건에 맞는 데이터가 없습니다.")
-        else:
-            st.dataframe(
-                agg[["순위","조직","총_미스캔","미처리율","FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]]
-                .style.format({
-                    "순위": "{:,}",
-                    "총_미스캔": "{:,}",
-                    "미처리율": "{:.1f}%",
-                    "FA고지_미스캔": "{:,}",
-                    "비교설명_미스캔": "{:,}",
-                    "완전판매_미스캔": "{:,}"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-            top_n = st.slider("차트 표시 개수", 5, 30, 30, key="dash_top_n"); top = agg.head(top_n)
-            c1, c2 = st.columns(2)
-            with c1:
-                doc_types = st.multiselect("표시 서류", ["FA고지","비교설명","완전판매","총 미스캔"], default=["총 미스캔"], key="dash_doc_types")
-                if doc_types:
-                    max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
-                    if len(doc_types)==1 and doc_types[0]=="총 미스캔":
-                        fig = go.Figure(); fig.add_trace(go.Bar(x=top["조직"], y=top["총_미스캔"], text=top["총_미스캔"], textposition="outside", marker_color=top["총_미스캔"], marker_colorscale="Reds"))
-                        fig.update_layout(title=f"미처리 건수 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420); st.plotly_chart(fig, use_container_width=True)
-                    elif len(doc_types)==1:
-                        cm = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔"}
-                        fig = px.bar(top, x="조직", y=cm[doc_types[0]], title=f"{doc_types[0]} 미스캔 TOP {top_n}", text=cm[doc_types[0]], color=cm[doc_types[0]], color_continuous_scale="Blues")
-                        fig.update_layout(xaxis_tickangle=-45, height=420); st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        ct = st.radio("차트 유형", ["그룹형","누적형"], horizontal=True, key="dash_chart_mode")
-                        cm2 = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔","총 미스캔":"총_미스캔"}
-                        p = top[["조직"]+[cm2[d] for d in doc_types]].copy(); p.columns=["조직"]+doc_types; p=p.melt("조직",var_name="종류",value_name="건수")
-                        fig = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if ct=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
-                        fig.update_layout(xaxis_tickangle=-45, height=420); st.plotly_chart(fig, use_container_width=True)
-            with c2:
-                max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
-                fig2 = go.Figure(); fig2.add_trace(go.Scatter(x=top["조직"], y=top["총_미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
-                fig2.update_layout(title=f"미처리 건수 추이 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420); st.plotly_chart(fig2, use_container_width=True)
+        agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
+        agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
+        agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
+        agg = agg.rename(columns={
+            agg_group: "??",
+            "fa_miss_sum": "FA??_???",
+            "bi_miss_sum": "????_???",
+            "cs_miss_sum": "????_???",
+            "target_sum": "???",
+            "scan_sum": "???",
+            "total_miss": "?_???",
+            "miss_rate": "????",
+            "scan_rate": "???",
+        })
+        if search_text:
+            agg = agg[agg["??"].astype(str).str.contains(search_text, case=False, na=False)]
+        agg = agg.sort_values("?_???", ascending=False).reset_index(drop=True)
+        agg.insert(0, "??", range(1, len(agg) + 1))
 
-    # ── TAB 2 : 미처리맵 ─────────────────────────
-    with tab_map:
-        st.subheader("🗺️ 미처리 분포 시각화")
-        mc1, mc2 = st.columns([1, 2])
-        with mc1: map_level = st.selectbox("집계 단위", ["부문", "총괄", "부서", "영업가족"], key="map_level")
-        with mc2: map_type = st.radio("차트 유형", ["🥧 원그래프", "🔲 트리맵"], horizontal=True, key="map_type")
-        map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔", "sum"), 대상건=("증권번호", "count")).reset_index()
-        map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
-        map_agg = map_agg[map_agg["미스캔"] > 0].sort_values("미스캔", ascending=False)
-        if map_agg.empty: st.info("미처리 건수가 있는 데이터가 없습니다.")
+        if agg.empty:
+            st.info("??? ?? ???? ????.")
         else:
-            if map_type == "🥧 원그래프":
-                fig_pie = px.pie(map_agg, values="미스캔", names=map_level, title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
-                fig_pie.update_traces(textposition='inside', textinfo='percent+label'); fig_pie.update_layout(height=500)
-                st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                fig_tree = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미처리 분포", color_continuous_scale="RdYlGn_r")
-                fig_tree.update_layout(height=500); st.plotly_chart(fig_tree, use_container_width=True)
-            st.markdown(f"#### 📊 {map_level}별 상세 데이터")
             st.dataframe(
-                map_agg.rename(columns={map_level:"조직"}).style.format({
-                    "미스캔": "{:,}",
-                    "대상건": "{:,}",
-                    "미처리율": "{:.1f}%"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-
-    # ── TAB 3 : 계층 리포트 ─────────────────────────
-    with tab_report:
-        st.subheader("📊 전체 데이터 기반 계층별 미처리 현황")
-        report_df = build_hierarchy_report(df, sel_months)
-        if report_df.empty: st.info("데이터가 없습니다.")
-        else:
-            def style_row(row):
-                if row["구분"]=="부문계":   return ["background-color:#1F3864;color:white;font-weight:bold"]*len(row)
-                elif row["구분"]=="총괄계": return ["background-color:#2E75B6;color:white;font-weight:bold"]*len(row)
-                elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
-                return [""]*len(row)
-            disp_df = report_df.copy()
-            st.dataframe(
-                disp_df.style.apply(style_row, axis=1).format({
-                    "FA": "{:,}",
-                    "비교": "{:,}",
-                    "완판": "{:,}",
-                    "총미스캔": "{:,}",
-                    "대상건": "{:,}",
-                    "미처리율": "{:.1f}%"
+                agg[["??", "??", "???", "???", "?_???", "????", "???", "FA??_???", "????_???", "????_???"]].style.format({
+                    "??": "{:,}",
+                    "???": "{:,}",
+                    "???": "{:,}",
+                    "?_???": "{:,}",
+                    "????": "{:.1f}%",
+                    "???": "{:.1f}%",
+                    "FA??_???": "{:,}",
+                    "????_???": "{:,}",
+                    "????_???": "{:,}",
                 }),
                 use_container_width=True,
                 hide_index=True,
-                height=500
             )
+
+            top_n = st.slider("?? ?? ??", 5, 30, 20, key="dash_top_n")
+            top = agg.head(top_n)
+            c1, c2 = st.columns(2)
+            with c1:
+                doc_types = st.multiselect("?? ??", ["FA??", "????", "????", "? ???"], default=["? ???"], key="dash_doc_types")
+                if doc_types:
+                    max_v = top["?_???"].max()
+                    yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
+                    if len(doc_types) == 1 and doc_types[0] == "? ???":
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(x=top["??"], y=top["?_???"], text=top["?_???"], textposition="outside", marker_color=top["?_???"], marker_colorscale="Reds"))
+                    elif len(doc_types) == 1:
+                        col_map = {"FA??": "FA??_???", "????": "????_???", "????": "????_???"}
+                        fig = px.bar(top, x="??", y=col_map[doc_types[0]], title=f"{doc_types[0]} ??? TOP {top_n}", text=col_map[doc_types[0]], color=col_map[doc_types[0]], color_continuous_scale="Blues")
+                    else:
+                        chart_mode = st.radio("?? ??", ["???", "???"], horizontal=True, key="dash_chart_mode")
+                        col_map = {"FA??": "FA??_???", "????": "????_???", "????": "????_???", "? ???": "?_???"}
+                        p = top[["??"] + [col_map[d] for d in doc_types]].copy()
+                        p.columns = ["??"] + doc_types
+                        p = p.melt("??", var_name="??", value_name="??")
+                        fig = px.bar(p, x="??", y="??", color="??", barmode="group" if chart_mode == "???" else "stack")
+                    fig.update_layout(xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
+                    st.plotly_chart(fig, use_container_width=True)
+            with c2:
+                max_v = top["?_???"].max()
+                yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
+                fig2 = go.Figure()
+                fig2.add_trace(go.Scatter(x=top["??"], y=top["?_???"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
+                fig2.update_layout(title=f"??? ?? ?? TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
+                st.plotly_chart(fig2, use_container_width=True)
+
+    with tab_map:
+        st.subheader("??? ?? ???")
+        mc1, mc2 = st.columns([1, 2])
+        with mc1:
+            map_level = st.selectbox("?? ??", ["??", "??", "??", "????"], key="map_level")
+        with mc2:
+            map_type = st.radio("?? ??", ["?? ??", "???"], horizontal=True, key="map_type")
+
+        map_agg = df_sel.groupby(map_level).agg(
+            miss_sum=("???", "sum"),
+            target_sum=("???", "sum"),
+            scan_sum=("???", "sum"),
+        ).reset_index()
+        map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
+        map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
+        map_agg = map_agg.rename(columns={
+            map_level: "??",
+            "miss_sum": "???",
+            "target_sum": "???",
+            "scan_sum": "???",
+            "miss_rate": "????",
+            "scan_rate": "???",
+        })
+        map_agg = map_agg[map_agg["???"] > 0].sort_values("???", ascending=False)
+
+        if map_agg.empty:
+            st.info("??? ??? ?? ???? ????.")
+        else:
+            if map_type == "?? ??":
+                fig_pie = px.pie(map_agg, values="???", names="??", title="??? ??? ?? ??", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+                fig_pie.update_layout(height=500)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                fig_tree = px.treemap(map_agg, path=["??"], values="???", color="????", title="??? ??? ??", color_continuous_scale="RdYlGn_r")
+                fig_tree.update_layout(height=500)
+                st.plotly_chart(fig_tree, use_container_width=True)
+
+            st.dataframe(
+                map_agg.style.format({
+                    "???": "{:,}",
+                    "???": "{:,}",
+                    "???": "{:,}",
+                    "????": "{:.1f}%",
+                    "???": "{:.1f}%",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with tab_report:
+        st.subheader("?? ??? ?? ??? ??? ??")
+        report_df = build_hierarchy_report(df, sel_months)
+        if report_df.empty:
+            st.info("???? ????.")
+        else:
+            def style_row(row):
+                if row["??"] == "???":
+                    return ["background-color:#1F3864;color:white;font-weight:bold"] * len(row)
+                if row["??"] == "???":
+                    return ["background-color:#2E75B6;color:white;font-weight:bold"] * len(row)
+                if row["??"] == "???":
+                    return ["background-color:#D9E1F2;font-weight:bold"] * len(row)
+                return [""] * len(row)
+
+            st.dataframe(
+                report_df.style.apply(style_row, axis=1).format({
+                    "FA": "{:,}",
+                    "??": "{:,}",
+                    "??": "{:,}",
+                    "????": "{:,}",
+                    "???": "{:,}",
+                    "???": "{:,}",
+                    "????": "{:.1f}%",
+                    "???": "{:.1f}%",
+                }),
+                use_container_width=True,
+                hide_index=True,
+                height=500,
+            )
+
             st.divider()
             pivot_df = build_monthly_hierarchy_pivot(df, sel_months)
             if not pivot_df.empty:
-                st.markdown("### 📌 월별 피벗형 계층 리포트")
                 pivot_display = pivot_df.copy()
                 for col in pivot_display.columns:
-                    if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율"):
+                    if col not in ["??", "??", "??", "??"] and not col.endswith("_????") and not col.endswith("_???"):
                         pivot_display[col] = pivot_display[col].apply(lambda x: int(x) if pd.notna(x) else "")
                 st.dataframe(
-                    pivot_display.style.format({col: "{:,}" for col in pivot_display.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_미처리율")}),
+                    pivot_display.style.format({
+                        col: "{:,}" for col in pivot_display.columns
+                        if col not in ["??", "??", "??", "??"] and not col.endswith("_????") and not col.endswith("_???")
+                    }).format({
+                        col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_????") or col.endswith("_???")
+                    }),
                     use_container_width=True,
                     hide_index=True,
-                    height=420
+                    height=420,
                 )
+
             cr1, cr2 = st.columns(2)
             with cr1:
-                if st.button("📥 계층 리포트 Excel", use_container_width=True):
-                    with st.spinner("생성 중..."): buf = report_excel(df, sel_months)
-                    st.download_button("⬇️ Excel", buf, f"계층리포트_{period_text.replace(' ','_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_rpt_xl")
+                if st.button("?? ??? Excel", use_container_width=True):
+                    with st.spinner("?? ?..."):
+                        buf = report_excel(df, sel_months)
+                    st.download_button("Excel ????", buf, f"?????_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_rpt_xl")
             with cr2:
-                if st.button("📥 계층 리포트 PDF", use_container_width=True):
-                    with st.spinner("생성 중..."): buf2 = report_pdf(df, sel_months)
-                    st.download_button("⬇️ PDF", buf2, f"계층리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_rpt_pdf")
-            st.markdown("---")
-            if st.button("📄 전체 페이지 PDF", use_container_width=True, key="dl_fullpage_pdf"):
-                with st.spinner("전체 페이지 PDF 생성 중..."):
-                    agg_group_state = st.session_state.get("agg_group", "부문")
-                    map_level_state = st.session_state.get("map_level", "부문")
-                    dash_doc_types = st.session_state.get("dash_doc_types", ["총 미스캔"])
-                    dash_chart_mode = st.session_state.get("dash_chart_mode", "그룹형")
-                    dash_top_n = st.session_state.get("dash_top_n", 10)
-                    map_type_state = st.session_state.get("map_type", "🔲 트리맵")
-                    buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, dash_top_n, map_type_state)
-                    st.download_button("⬇️ 전체 페이지 PDF 다운로드", buf_full, f"전체페이지리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
+                if st.button("?? ??? PDF", use_container_width=True):
+                    with st.spinner("?? ?..."):
+                        buf2 = report_pdf(df, sel_months)
+                    st.download_button("PDF ????", buf2, f"?????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_rpt_pdf")
 
-    # ── TAB 4 : 관리대장 출력 ─────────────────────────
+            st.markdown("---")
+            if st.button("?? ??? PDF", use_container_width=True, key="dl_fullpage_pdf"):
+                with st.spinner("?? ??? PDF ?? ?..."):
+                    agg_group_state = st.session_state.get("agg_group", "??")
+                    map_level_state = st.session_state.get("map_level", "??")
+                    dash_doc_types = st.session_state.get("dash_doc_types", ["? ???"])
+                    dash_chart_mode = st.session_state.get("dash_chart_mode", "???")
+                    dash_top_n = st.session_state.get("dash_top_n", 10)
+                    map_type_state = st.session_state.get("map_type", "???")
+                    buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, dash_top_n, map_type_state)
+                    st.download_button("?? ??? PDF ????", buf_full, f"????????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
+
     with tab_ledger:
-        st.subheader("📋 관리대장 선정 및 출력")
+        st.subheader("???? ?? ? ??")
         cf1, cf2, cf3 = st.columns(3)
-        with cf1: sel_bm = st.selectbox("부문", ["전체"]+sorted(df_sel["부문"].dropna().unique().tolist()), key="lg_bm")
-        df_l1 = df_sel if sel_bm=="전체" else df_sel[df_sel["부문"]==sel_bm]
-        with cf2: sel_tg = st.selectbox("총괄", ["전체"]+sorted(df_l1["총괄"].dropna().unique().tolist()), key="lg_tg")
-        df_l2 = df_l1 if sel_tg=="전체" else df_l1[df_l1["총괄"]==sel_tg]
-        with cf3: sel_ds = st.selectbox("부서", ["전체"]+sorted(df_l2["부서"].dropna().unique().tolist()), key="lg_ds")
-        df_l3 = df_l2 if sel_ds=="전체" else df_l2[df_l2["부서"]==sel_ds]
+        with cf1:
+            sel_bm = st.selectbox("??", ["??"] + sorted(df_sel["??"].dropna().unique().tolist()), key="lg_bm")
+        df_l1 = df_sel if sel_bm == "??" else df_sel[df_sel["??"] == sel_bm]
+        with cf2:
+            sel_tg = st.selectbox("??", ["??"] + sorted(df_l1["??"].dropna().unique().tolist()), key="lg_tg")
+        df_l2 = df_l1 if sel_tg == "??" else df_l1[df_l1["??"] == sel_tg]
+        with cf3:
+            sel_ds = st.selectbox("??", ["??"] + sorted(df_l2["??"].dropna().unique().tolist()), key="lg_ds")
+        df_l3 = df_l2 if sel_ds == "??" else df_l2[df_l2["??"] == sel_ds]
+
         targets = get_ledger_targets(df_l3, sel_months)
-        if not targets: st.success("✅ 미스캔 발생 대상이 없습니다.")
+        if not targets:
+            st.success("??? ?? ??? ????.")
         else:
-            prev = [{"부문":r["부문"],"총괄":r["총괄"],"부서":dept,"영업가족":r["영업가족"],"FA":int(r["FA"]),"비교":int(r["비교"]),"완판":int(r["완판"]),"총미스캔":int(r["총미스캔"])} for dept, grp in targets.items() for _, r in grp.iterrows()]
+            prev = [
+                {
+                    "??": r["??"],
+                    "??": r["??"],
+                    "??": dept,
+                    "????": r["????"],
+                    "FA": int(r["FA"]),
+                    "??": int(r["??"]),
+                    "??": int(r["??"]),
+                    "????": int(r["????"]),
+                    "???": int(r["??"]),
+                    "???": int(r["??"]),
+                }
+                for dept, grp in targets.items()
+                for _, r in grp.iterrows()
+            ]
             prev_df = pd.DataFrame(prev)
-            st.markdown(f"#### 📌 선정 대상 — 총 **{len(prev_df)}** 개 영업가족")
             st.dataframe(
                 prev_df.style.format({
                     "FA": "{:,}",
-                    "비교": "{:,}",
-                    "완판": "{:,}",
-                    "총미스캔": "{:,}"
+                    "??": "{:,}",
+                    "??": "{:,}",
+                    "????": "{:,}",
+                    "???": "{:,}",
+                    "???": "{:,}",
                 }),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
+
             all_depts = sorted(targets.keys())
-            sel_depts = st.multiselect("출력 부서 (미선택 시 전체)", all_depts, default=all_depts, key="lg_sel_dept")
-            if not sel_depts: st.warning("⚠️ 출력할 부서를 1개 이상 선택하세요.")
+            sel_depts = st.multiselect("?? ??", all_depts, default=all_depts, key="lg_sel_dept")
+            if not sel_depts:
+                st.warning("??? ??? 1? ?? ??? ???.")
             else:
                 out_targets = {d: targets[d] for d in sel_depts if d in targets}
-                st.info(f"📄 출력 대상: **{len(sel_depts)}개 부서** · **{len([r for r in prev if r['부서'] in sel_depts])}개 영업가족**")
                 cd1, cd2 = st.columns(2)
                 with cd1:
-                    if st.button("📥 관리대장 PDF", use_container_width=True, key="gen_pdf"):
-                        with st.spinner("생성 중..."): pb = ledger_pdf(out_targets, period_text, df_l3)
-                        st.download_button("⬇️ PDF", pb, f"관리대장_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_ldg_pdf")
+                    if st.button("???? PDF", use_container_width=True, key="gen_pdf"):
+                        with st.spinner("?? ?..."):
+                            pb = ledger_pdf(out_targets, period_text, df_l3)
+                        st.download_button("PDF ????", pb, f"????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_ldg_pdf")
                 with cd2:
-                    if st.button("📥 관리대장 Excel", use_container_width=True, key="gen_xl"):
-                        with st.spinner("생성 중..."): xb = ledger_excel(out_targets, period_text, df_l3)
-                        st.download_button("⬇️ Excel", xb, f"관리대장_{period_text.replace(' ','_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_ldg_xl")
+                    if st.button("???? Excel", use_container_width=True, key="gen_xl"):
+                        with st.spinner("?? ?..."):
+                            xb = ledger_excel(out_targets, period_text, df_l3)
+                        st.download_button("Excel ????", xb, f"????_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_ldg_xl")
 
 # ==========================================
 # 13. main
