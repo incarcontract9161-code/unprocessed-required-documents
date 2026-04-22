@@ -721,8 +721,8 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
         scan_sum=(scan_col, "sum"),
     ).reset_index()
     agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
-    agg["miss_rate"] = np.where(agg["target_sum"] > 0, (agg["total_miss"] / agg["target_sum"] * 100).round(1), 0.0)
-    agg["scan_rate"] = np.where(agg["target_sum"] > 0, (agg["scan_sum"] / agg["target_sum"] * 100).round(1), 0.0)
+    agg["miss_rate"] = ((agg["total_miss"] / agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
+    agg["scan_rate"] = ((agg["scan_sum"] / agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
     agg = agg.rename(columns={agg_group: org_label}).sort_values("total_miss", ascending=False).head(dash_top_n)
 
     if not agg.empty:
@@ -813,8 +813,8 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
         target_sum=(target_col, "sum"),
         scan_sum=(scan_col, "sum"),
     ).reset_index()
-    map_agg["miss_rate"] = np.where(map_agg["target_sum"] > 0, (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1), 0.0)
-    map_agg["scan_rate"] = np.where(map_agg["target_sum"] > 0, (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1), 0.0)
+    map_agg["miss_rate"] = ((map_agg["miss_sum"] / map_agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
+    map_agg["scan_rate"] = ((map_agg["scan_sum"] / map_agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
     map_agg = map_agg.sort_values("miss_sum", ascending=False).head(dash_top_n)
 
     if not map_agg.empty:
@@ -1202,8 +1202,8 @@ def dashboard_page():
             scan_sum=(scan_col, "sum"),
         ).reset_index()
         agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
-        agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
-        agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
+        agg["miss_rate"] = ((agg["total_miss"] / agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
+        agg["scan_rate"] = ((agg["scan_sum"] / agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
         agg = agg.rename(columns={
             agg_group: "\uc870\uc9c1",
             "fa_miss_sum": "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94",
@@ -1249,7 +1249,16 @@ def dashboard_page():
                     yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
                     if len(doc_types) == 1 and doc_types[0] == "\ucd1d \ubbf8\uc2a4\uce94":
                         fig = go.Figure()
-                        fig.add_trace(go.Bar(x=top["\uc870\uc9c1"], y=top["\ucd1d_\ubbf8\uc2a4\uce94"], text=top["\ucd1d_\ubbf8\uc2a4\uce94"], textposition="outside", marker_color=top["\ucd1d_\ubbf8\uc2a4\uce94"], marker_colorscale="Reds"))
+                        fig.add_trace(go.Bar(
+                            x=top["\uc870\uc9c1"],
+                            y=top["\ucd1d_\ubbf8\uc2a4\uce94"],
+                            text=top["\ucd1d_\ubbf8\uc2a4\uce94"],
+                            textposition="outside",
+                            texttemplate="%{text:,.0f}",
+                            hovertemplate="%{x}<br>\uac74\uc218: %{y:,.0f}<extra></extra>",
+                            marker_color=top["\ucd1d_\ubbf8\uc2a4\uce94"],
+                            marker_colorscale="Reds",
+                        ))
                     elif len(doc_types) == 1:
                         col_map = {
                             "FA\uace0\uc9c0": "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94",
@@ -1257,6 +1266,7 @@ def dashboard_page():
                             "\uc644\uc804\ud310\ub9e4": "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94",
                         }
                         fig = px.bar(top, x="\uc870\uc9c1", y=col_map[doc_types[0]], title=f"{doc_types[0]} \ubbf8\uc2a4\uce94 TOP {top_n}", text=col_map[doc_types[0]], color=col_map[doc_types[0]], color_continuous_scale="Blues")
+                        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", hovertemplate="%{x}<br>\uac74\uc218: %{y:,.0f}<extra></extra>")
                     else:
                         chart_mode = st.radio("\ucc28\ud2b8 \uc720\ud615", ["\uadf8\ub8f9\ud615", "\ub204\uc801\ud615"], horizontal=True, key="dash_chart_mode")
                         col_map = {
@@ -1268,15 +1278,25 @@ def dashboard_page():
                         p = top[["\uc870\uc9c1"] + [col_map[d] for d in doc_types]].copy()
                         p.columns = ["\uc870\uc9c1"] + doc_types
                         p = p.melt("\uc870\uc9c1", var_name="\uc885\ub958", value_name="\uac74\uc218")
-                        fig = px.bar(p, x="\uc870\uc9c1", y="\uac74\uc218", color="\uc885\ub958", barmode="group" if chart_mode == "\uadf8\ub8f9\ud615" else "stack")
-                    fig.update_layout(xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
+                        fig = px.bar(p, x="\uc870\uc9c1", y="\uac74\uc218", color="\uc885\ub958", text="\uac74\uc218", barmode="group" if chart_mode == "\uadf8\ub8f9\ud615" else "stack")
+                        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", hovertemplate="%{x}<br>%{fullData.name}: %{y:,.0f}<extra></extra>")
+                    fig.update_layout(xaxis_tickangle=-45, yaxis=dict(range=yr, tickformat=","), height=420)
                     st.plotly_chart(fig, use_container_width=True)
             with c2:
                 max_v = top["\ucd1d_\ubbf8\uc2a4\uce94"].max()
                 yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
                 fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(x=top["\uc870\uc9c1"], y=top["\ucd1d_\ubbf8\uc2a4\uce94"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
-                fig2.update_layout(title=f"\ubbf8\ucc98\ub9ac \uac74\uc218 \ucd94\uc774 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
+                fig2.add_trace(go.Scatter(
+                    x=top["\uc870\uc9c1"],
+                    y=top["\ucd1d_\ubbf8\uc2a4\uce94"],
+                    mode="lines+markers+text",
+                    text=[f"{int(v):,}" for v in top["\ucd1d_\ubbf8\uc2a4\uce94"]],
+                    textposition="top center",
+                    hovertemplate="%{x}<br>\uac74\uc218: %{y:,.0f}<extra></extra>",
+                    line=dict(shape="spline", color="#CC0000"),
+                    marker=dict(size=6),
+                ))
+                fig2.update_layout(title=f"\ubbf8\ucc98\ub9ac \uac74\uc218 \ucd94\uc774 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr, tickformat=","), height=420)
                 st.plotly_chart(fig2, use_container_width=True)
 
     with tab_map:
@@ -1292,8 +1312,8 @@ def dashboard_page():
             target_sum=(target_col, "sum"),
             scan_sum=(scan_col, "sum"),
         ).reset_index()
-        map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
-        map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
+        map_agg["miss_rate"] = ((map_agg["miss_sum"] / map_agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
+        map_agg["scan_rate"] = ((map_agg["scan_sum"] / map_agg["target_sum"].replace(0, pd.NA)) * 100).round(1).fillna(0.0)
         map_agg = map_agg.rename(columns={map_level: "\uc870\uc9c1"})
         map_agg = map_agg[map_agg["miss_sum"] > 0].sort_values("miss_sum", ascending=False)
 
@@ -1302,7 +1322,7 @@ def dashboard_page():
         else:
             if map_type == "\ud30c\uc774 \ucc28\ud2b8":
                 fig_pie = px.pie(map_agg, values="miss_sum", names="\uc870\uc9c1", title=f"{map_level}\ubcc4 \ubbf8\uc2a4\uce94 \uac74\uc218 \ube44\uc911", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
-                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+                fig_pie.update_traces(textposition="inside", textinfo="percent+label", hovertemplate="%{label}<br>건수: %{value:,.0f}<br>비중: %{percent}<extra></extra>")
                 fig_pie.update_layout(height=500)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
