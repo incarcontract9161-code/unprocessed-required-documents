@@ -574,7 +574,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     agg["총_미스캔"] = agg[["FA고지_미스캔","비교설명_미스캔","완전판매_미스캔"]].sum(axis=1)
     agg["미처리율"] = (agg["총_미스캔"] / agg["대상건"] * 100).round(1)
     agg = agg.rename(columns={agg_group: "조직"})
-    agg = agg.sort_values("전체미스캔", ascending=False).head(dash_top_n)
+    agg = agg.sort_values("총_미스캔", ascending=False).head(dash_top_n)
     if not agg.empty:
         E.append(Paragraph(f"▶ 현황 대시보드 차트 (집계: {agg_group})", st_["section"]))
         hdr = [["조직", "총_미스캔", "미처리율", "FA고지", "비교설명", "완전판매", "대상건"]]
@@ -965,7 +965,7 @@ def dashboard_page():
         agg["미처리율"] = (agg["총_미스캔"]/agg["대상건"]*100).round(1)
         agg = agg.rename(columns={agg_group:"조직"})
         if search_text: agg = agg[agg["조직"].astype(str).str.contains(search_text, case=False, na=False)]
-        agg = agg.sort_values("전체미스캔", ascending=False).reset_index(drop=True); agg.insert(0,"순위",range(1,len(agg)+1))
+        agg = agg.sort_values("총_미스캔", ascending=False).reset_index(drop=True); agg.insert(0,"순위",range(1,len(agg)+1))
         if agg.empty: st.info("조건에 맞는 데이터가 없습니다.")
         else:
             st.dataframe(
@@ -988,7 +988,7 @@ def dashboard_page():
                 if doc_types:
                     max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
                     if len(doc_types)==1 and doc_types[0]=="총 미스캔":
-                        fig = go.Figure(); fig.add_trace(go.Bar(x=top["조직"], y=top["전체미스캔"], text=top["전체미스캔"], textposition="outside", marker_color=top["전체미스캔"], marker_colorscale="Reds"))
+                        fig = go.Figure(); fig.add_trace(go.Bar(x=top["조직"], y=top["총_미스캔"], text=top["총_미스캔"], textposition="outside", marker_color=top["총_미스캔"], marker_colorscale="Reds"))
                         fig.update_layout(title=f"미처리 건수 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420); st.plotly_chart(fig, use_container_width=True)
                     elif len(doc_types)==1:
                         cm = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔"}
@@ -1002,7 +1002,7 @@ def dashboard_page():
                         fig.update_layout(xaxis_tickangle=-45, height=420); st.plotly_chart(fig, use_container_width=True)
             with c2:
                 max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
-                fig2 = go.Figure(); fig2.add_trace(go.Scatter(x=top["조직"], y=top["전체미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
+                fig2 = go.Figure(); fig2.add_trace(go.Scatter(x=top["조직"], y=top["총_미스캔"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
                 fig2.update_layout(title=f"미처리 건수 추이 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420); st.plotly_chart(fig2, use_container_width=True)
 
     # ── TAB 2 : 미처리맵 ─────────────────────────
