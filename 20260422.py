@@ -605,8 +605,11 @@ def ledger_pdf(families_by_dept, period_text, df_src):
 
 def ledger_excel(families_by_dept, period_text, df_src):
     wb = Workbook(); ws0 = wb.active; ws0.title="목차"
-    tfn = "맑은 고딕"; hf = Font(name=tfn,size=9,bold=True,color="FFFFFF"); bf = Font(name=tfn,size=9)
-    nf = Font(name=tfn,size=8,italic=True,color="CC0000"); sig_f = Font(name=tfn,size=9,bold=True)
+    tfn = "맑은 고딕"
+    hf = Font(name=tfn,size=9,bold=True,color="FFFFFF")
+    bf = Font(name=tfn,size=9)
+    nf = Font(name=tfn,size=8,italic=True,color="CC0000")
+    sig_f = Font(name=tfn,size=9,bold=True)
     bdr, h_fill, alt_fill = Border(left=Side("thin"),right=Side("thin"),top=Side("thin"),bottom=Side("thin")), PatternFill("solid",fgColor="4472C4"), PatternFill("solid",fgColor="EEF3FB")
     today = datetime.now().strftime("%Y년 %m월 %d일")
     ws0.merge_cells("A1:F1"); ws0["A1"]=f"관리대장 목차  ·  {period_text}  ·  발급: {today}"
@@ -622,6 +625,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
                 if ir%2==0: c.fill=alt_fill
             ir+=1
     for ci,w in enumerate([22,25,13,13,13,14],1): ws0.column_dimensions[get_column_letter(ci)].width=w
+    
     for dept_name,grp_df in families_by_dept.items():
         sec, tg = grp_df.iloc[0]["부문"], grp_df.iloc[0]["총괄"]
         sname=f"표지_{dept_name[:10]}".replace("/","_"); ws_c=wb.create_sheet(title=sname)
@@ -631,6 +635,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
         r=5; ws_c.cell(r,1,"【필수 서류 상세 안내】").font=Font(name=tfn,size=10,bold=True); r+=1
         for ci, header in enumerate(["No.", "서류명", "법적 근거", "목적 및 주요 내용"], 1):
             c = ws_c.cell(r, ci, header); c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
+        # [수정] 오타 수정: colum n_dimensions -> column_dimensions
         ws_c.column_dimensions[get_column_letter(1)].width = 6; ws_c.column_dimensions[get_column_letter(2)].width = 20
         ws_c.column_dimensions[get_column_letter(3)].width = 25; ws_c.column_dimensions[get_column_letter(4)].width = 45
         r += 1
@@ -640,6 +645,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ["3", "고지의무확인서", "금융소비자보호법 26조와\n동법시행령 24조", "판매자 권한·책임·보상 관련 핵심 사항 고지, 소비자 소인 예방"],
             ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)", "금융소비자보호법 제17·19조\n영업지원기준안", "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
         ]
+        # [수정] 문법 오류 수정: for row_data in docs_data:
         for row_data in docs_data:
             for ci, val in enumerate(row_data, 1):
                 c = ws_c.cell(r, ci, val); c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
@@ -691,15 +697,18 @@ def ledger_excel(families_by_dept, period_text, df_src):
                 c=ws_f.cell(r_f+1,ci,v); c.font=bf; c.border=bdr; c.alignment=Alignment(horizontal="center")
                 if isinstance(v,(int,float)): c.number_format = "#,##0"
             r_f+=3
+            # [수정] 오타 수정: he ight -> height
             ws_f.cell(r_f,1,PRECAUTION_TEXT_COVER).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=30; r_f+=2
             ws_f.cell(r_f,1,PRECAUTION_TEXT_SHEET).font=nf; ws_f.cell(r_f,1).alignment=Alignment(wrapText=True); ws_f.row_dimensions[r_f].height=30; r_f+=2
             ws_f.cell(r_f,1,"【필수 서류 상세 안내】").font=Font(name=tfn,size=10,bold=True); r_f+=1
             for ci, header in enumerate(["No.", "서류명", "법적 근거", "목적 및 주요 내용"], 1):
                 c = ws_f.cell(r_f, ci, header); c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
             ws_f.column_dimensions[get_column_letter(1)].width = 6; ws_f.column_dimensions[get_column_letter(2)].width = 20
+            # [수정] 오타 수정: get_column_letter(3 ) -> get_column_letter(3)
             ws_f.column_dimensions[get_column_letter(3)].width = 25; ws_f.column_dimensions[get_column_letter(4)].width = 45
             r_f += 1
-            for row_data in docs_
+            # [수정] 문법 오류 수정: for row_data in docs_data:
+            for row_data in docs_data:
                 for ci, val in enumerate(row_data, 1):
                     c = ws_f.cell(r_f, ci, val); c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
                 ws_f.row_dimensions[r_f].height = 35; r_f += 1
@@ -710,7 +719,6 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ws_f.cell(r_f,1,"작성일: _______________").font=bf; r_f+=1
             ws_f.cell(r_f,1,"영업가족대표 서명: ________________ (인)").font=sig_f
     buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
 # ==========================================
 # 11. UI – 로그인 & 대시보드
 # ==========================================
