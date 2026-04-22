@@ -571,136 +571,128 @@ def report_pdf(df, months):
 # ==========================================
 # 9. 전체 페이지 PDF
 
-def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="???", dash_top_n=15, map_type="???"):
-    fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
+def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="group", dash_top_n=15, map_type="treemap"):
+    fn = register_korean_font()
+    st_ = _pdf_styles(fn)
+    buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm, leftMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
-    today = datetime.now().strftime("%Y? %m? %d?")
-    period_str = ", ".join(months) if months else "??"
-    E = [
-        Paragraph("?? ??? ?? ???", st_["title"]),
-        Paragraph(f"??: {period_str}  |  ????: {today}", st_["date"]),
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    period_str = ", ".join(months) if months else "\uc804\uccb4"
+    elements = [
+        Paragraph("\uc804\uccb4 \ud398\uc774\uc9c0 \uc694\uc57d \ub9ac\ud3ec\ud2b8", st_["title"]),
+        Paragraph(f"\uae30\uac04: {period_str} | \ubc1c\uae09\uc77c\uc790: {today}", st_["date"]),
         HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
         Spacer(1, 8),
     ]
 
-    df_sel = df[df["?_????"].isin(months)].copy() if months else df.copy()
+    month_col = "\uc6d4_\ud53c\ub9ac\uc5b4\ub4dc"
+    bi_miss_col = "\ube44\uad50_miss"
+    cs_miss_col = "\uc644\ud310_miss"
+    miss_col = "\ubbf8\uc2a4\uce94"
+    target_col = "\ub300\uc0c1\uac74"
+    scan_col = "\uc2a4\uce94\uac74"
+
+    df_sel = df[df[month_col].isin(months)].copy() if months else df.copy()
     fa_t = int(df_sel["FA_miss"].sum())
-    bi_t = int(df_sel["??_miss"].sum())
-    cs_t = int(df_sel["??_miss"].sum())
-    miss_total = int(df_sel["???"].sum())
-    target_total = int(df_sel["???"].sum())
-    scan_total = int(df_sel["???"].sum())
+    bi_t = int(df_sel[bi_miss_col].sum())
+    cs_t = int(df_sel[cs_miss_col].sum())
+    miss_total = int(df_sel[miss_col].sum())
+    target_total = int(df_sel[target_col].sum())
+    scan_total = int(df_sel[scan_col].sum())
     miss_rate = round(miss_total / target_total * 100, 1) if target_total else 0.0
     scan_rate = round(scan_total / target_total * 100, 1) if target_total else 0.0
 
-    E.append(Paragraph("?? KPI", st_["section"]))
+    elements.append(Paragraph("\uc8fc\uc694 KPI", st_["section"]))
     summary = [
-        ["? ????", f"{len(df_sel):,}"],
-        ["? ?????", f"{target_total:,}"],
-        ["? ?????", f"{miss_total:,}"],
-        ["???? / ???", f"{miss_rate:.1f}% / {scan_rate:.1f}%"],
-        ["FA / ?? / ??", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"],
+        ["\ucd1d \uacc4\uc57d\uac74\uc218", f"{len(df_sel):,}"],
+        ["\ucd1d \ub300\uc0c1\uc11c\ub958\uc218", f"{target_total:,}"],
+        ["\ucd1d \ubbf8\ucc98\ub9ac\uac74\uc218", f"{miss_total:,}"],
+        ["\ubbf8\ucc98\ub9ac\uc728 / \uc2a4\uce94\uc728", f"{miss_rate:.1f}% / {scan_rate:.1f}%"],
+        ["FA / \ube44\uad50 / \uc644\ud310", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"],
     ]
-    E.append(_tbl(summary, [90, 150], fn, header_rows=0, align="LEFT"))
-    E.append(Spacer(1, 8))
+    elements.append(_tbl(summary, [100, 160], fn, header_rows=0, align="LEFT"))
+    elements.append(Spacer(1, 8))
 
-    dash_doc_types = dash_doc_types or ["? ???"]
     agg = df_sel.groupby(agg_group).agg(
         fa_miss_sum=("FA_miss", "sum"),
-        bi_miss_sum=("??_miss", "sum"),
-        cs_miss_sum=("??_miss", "sum"),
-        target_sum=("???", "sum"),
-        scan_sum=("???", "sum"),
+        bi_miss_sum=(bi_miss_col, "sum"),
+        cs_miss_sum=(cs_miss_col, "sum"),
+        target_sum=(target_col, "sum"),
+        scan_sum=(scan_col, "sum"),
     ).reset_index()
     agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
     agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
     agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
-    agg = agg.rename(columns={
-        agg_group: "??",
-        "fa_miss_sum": "FA??_???",
-        "bi_miss_sum": "????_???",
-        "cs_miss_sum": "????_???",
-        "target_sum": "???",
-        "scan_sum": "???",
-        "total_miss": "?_???",
-        "miss_rate": "????",
-        "scan_rate": "???",
-    }).sort_values("?_???", ascending=False).head(dash_top_n)
+    agg = agg.rename(columns={agg_group: "\uc870\uc9c1"}).sort_values("total_miss", ascending=False).head(dash_top_n)
 
     if not agg.empty:
-        E.append(Paragraph(f"?? ???? ?? ({agg_group})", st_["section"]))
-        hdr = [["??", "???", "???", "?_???", "????", "???", "FA??", "????", "????"]]
+        headers = [["\uc870\uc9c1", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ucd1d_\ubbf8\uc2a4\uce94", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728", "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4"]]
         rows = [[
-            r["??"],
-            f"{int(r['???']):,}",
-            f"{int(r['???']):,}",
-            f"{int(r['?_???']):,}",
-            f"{r['????']:.1f}%",
-            f"{r['???']:.1f}%",
-            f"{int(r['FA??_???']):,}",
-            f"{int(r['????_???']):,}",
-            f"{int(r['????_???']):,}",
+            r["\uc870\uc9c1"],
+            f"{int(r['target_sum']):,}",
+            f"{int(r['scan_sum']):,}",
+            f"{int(r['total_miss']):,}",
+            f"{r['miss_rate']:.1f}%",
+            f"{r['scan_rate']:.1f}%",
+            f"{int(r['fa_miss_sum']):,}",
+            f"{int(r['bi_miss_sum']):,}",
+            f"{int(r['cs_miss_sum']):,}",
         ] for _, r in agg.iterrows()]
-        E.append(_tbl(hdr + rows, [84, 48, 48, 52, 45, 45, 42, 42, 42], fn))
-        E.append(Spacer(1, 8))
+        elements.append(Paragraph(f"\ud604\ud669 \ub300\uc2dc\ubcf4\ub4dc \uc694\uc57d ({agg_group})", st_["section"]))
+        elements.append(_tbl(headers + rows, [84, 48, 48, 52, 45, 45, 42, 42, 42], fn))
+        elements.append(Spacer(1, 8))
 
     map_agg = df_sel.groupby(map_level).agg(
-        miss_sum=("???", "sum"),
-        target_sum=("???", "sum"),
-        scan_sum=("???", "sum"),
+        miss_sum=(miss_col, "sum"),
+        target_sum=(target_col, "sum"),
+        scan_sum=(scan_col, "sum"),
     ).reset_index()
     map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
     map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
-    map_agg = map_agg.rename(columns={
-        map_level: "??",
-        "miss_sum": "???",
-        "target_sum": "???",
-        "scan_sum": "???",
-        "miss_rate": "????",
-        "scan_rate": "???",
-    }).sort_values("???", ascending=False).head(dash_top_n)
+    map_agg = map_agg.sort_values("miss_sum", ascending=False).head(dash_top_n)
 
     if not map_agg.empty:
-        E.append(Paragraph(f"{map_level}? ??? ??", st_["section"]))
-        hdr = [["??", "???", "???", "???", "????", "???"]]
+        headers = [["\uc870\uc9c1", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\uc2a4\uce94", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]]
         rows = [[
-            r["??"],
-            f"{int(r['???']):,}",
-            f"{int(r['???']):,}",
-            f"{int(r['???']):,}",
-            f"{r['????']:.1f}%",
-            f"{r['???']:.1f}%",
+            r[map_level],
+            f"{int(r['target_sum']):,}",
+            f"{int(r['scan_sum']):,}",
+            f"{int(r['miss_sum']):,}",
+            f"{r['miss_rate']:.1f}%",
+            f"{r['scan_rate']:.1f}%",
         ] for _, r in map_agg.iterrows()]
-        E.append(_tbl(hdr + rows, [100, 55, 55, 55, 55, 55], fn))
-        E.append(Spacer(1, 8))
+        elements.append(Paragraph(f"{map_level}\ubcc4 \ubbf8\uc2a4\uce94 \ubd84\ud3ec", st_["section"]))
+        elements.append(_tbl(headers + rows, [100, 55, 55, 55, 55, 55], fn))
+        elements.append(Spacer(1, 8))
 
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
-        E.append(PageBreak())
-        E.append(Paragraph("?? ??? ?? ???", st_["section"]))
+        elements.append(PageBreak())
+        elements.append(Paragraph("\uc6d4\ubcc4 \ud53c\ubc97\ud615 \uacc4\uce35 \ub9ac\ud3ec\ud2b8", st_["section"]))
         headers = pivot.columns.tolist()
         rows = []
         for _, pr in pivot.iterrows():
             row = []
-            for v in pr.tolist():
-                if isinstance(v, (int, float)) and not pd.isna(v):
-                    row.append(f"{v:.1f}%" if isinstance(v, float) and abs(v) <= 100 and any(str(v).endswith(s) for s in [".0", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]) else f"{int(v):,}")
+            for col, val in zip(headers, pr.tolist()):
+                if isinstance(val, (int, float)) and not pd.isna(val):
+                    if col.endswith("_\ubbf8\ucc98\ub9ac\uc728") or col.endswith("_\uc2a4\uce94\uc728"):
+                        row.append(f"{float(val):.1f}%")
+                    else:
+                        row.append(f"{int(val):,}")
                 else:
-                    row.append(str(v))
+                    row.append(str(val))
             rows.append(row)
         fixed = [30, 30, 35, 45]
         month_cols = max(1, len(headers) - 4)
         remaining = max(12, int((542 - sum(fixed)) / month_cols))
         widths = fixed + [remaining] * month_cols
-        E.append(_tbl([headers] + rows, widths, fn))
+        elements.append(_tbl([headers] + rows, widths, fn))
 
-    doc.build(E)
+    doc.build(elements)
     buf.seek(0)
     return buf
 
-# ==========================================
-# 9. ???? PDF
-# ==========================================
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm,leftMargin=12*mm, topMargin=15*mm,bottomMargin=15*mm)
@@ -948,213 +940,233 @@ def login_page():
 # 12. 통합 대시보드
 # ==========================================
 def dashboard_page():
-    st.title("????")
+    st.title("\uc11c\ub958 \ucc98\ub9ac \ud604\ud669 \ub300\uc2dc\ubcf4\ub4dc")
 
     df = load_data()
     if df.empty:
-        st.warning("???? ????. insurance_data.xlsx ??? ??? ???.")
+        st.warning("\ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4. insurance_data.xlsx \ud30c\uc77c\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.")
         return
 
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        st.success(f"? {len(df):,}?? ??? ?? ??")
+        st.success(f"\ucd1d {len(df):,}\uac74\uc758 \ub370\uc774\ud130 \ub85c\ub4dc \uc644\ub8cc")
     with col2:
-        st.info(f"??: {get_file_update_time()}")
+        st.info(f"\uae30\uc900: {get_file_update_time()}")
     with col3:
-        if st.button("????"):
+        if st.button("\uc0c8\ub85c\uace0\uce68"):
             st.cache_data.clear()
             st.rerun()
 
-    all_months = sorted(df["?_????"].dropna().unique())
-    st.subheader("?? ?? ??")
-    sel_months = st.multiselect("? ??", all_months, default=[all_months[-1]] if all_months else [])
+    month_col = "\uc6d4_\ud53c\ub9ac\uc5b4\ub4dc"
+    bi_miss_col = "\ube44\uad50_miss"
+    cs_miss_col = "\uc644\ud310_miss"
+    miss_col = "\ubbf8\uc2a4\uce94"
+    target_col = "\ub300\uc0c1\uac74"
+    scan_col = "\uc2a4\uce94\uac74"
+    dept_col = "\ubd80\ubb38"
+    tg_col = "\ucd1d\uad04"
+    ds_col = "\ubd80\uc11c"
+    fam_col = "\uc601\uc5c5\uac00\uc871"
+
+    all_months = sorted(df[month_col].dropna().unique())
+    st.subheader("\ubd84\uc11d \uae30\uac04 \uc120\ud0dd")
+    sel_months = st.multiselect("\uc6d4 \uc120\ud0dd", all_months, default=[all_months[-1]] if all_months else [])
     if not sel_months:
-        st.warning("?? 1? ??? ?? ??? ???.")
+        st.warning("\ucd5c\uc18c 1\uac1c \uc774\uc0c1\uc758 \uc6d4\uc744 \uc120\ud0dd\ud574 \uc8fc\uc138\uc694.")
         return
 
     period_text = f"{sel_months[0]} ~ {sel_months[-1]}" if len(sel_months) > 1 else sel_months[0]
-    df_sel = df[df["?_????"].isin(sel_months)].copy()
+    df_sel = df[df[month_col].isin(sel_months)].copy()
     if df_sel.empty:
-        st.info("??? ??? ???? ????.")
+        st.info("\uc120\ud0dd\ud55c \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
         return
 
     fa_t = int(df_sel["FA_miss"].sum())
-    bi_t = int(df_sel["??_miss"].sum())
-    cs_t = int(df_sel["??_miss"].sum())
-    miss_total = int(df_sel["???"].sum())
-    target_total = int(df_sel["???"].sum())
-    scan_total = int(df_sel["???"].sum())
+    bi_t = int(df_sel[bi_miss_col].sum())
+    cs_t = int(df_sel[cs_miss_col].sum())
+    miss_total = int(df_sel[miss_col].sum())
+    target_total = int(df_sel[target_col].sum())
+    scan_total = int(df_sel[scan_col].sum())
     miss_rate = round(miss_total / target_total * 100, 1) if target_total else 0.0
     scan_rate = round(scan_total / target_total * 100, 1) if target_total else 0.0
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("? ????", f"{len(df_sel):,}?")
-    m2.metric("? ?????", f"{target_total:,}?")
-    m3.metric("????", f"{miss_rate:.1f}%")
-    m4.metric("???", f"{scan_rate:.1f}%")
-    st.caption(f"FA / ?? / ?? ???: {fa_t:,} / {bi_t:,} / {cs_t:,}")
+    m1.metric("\ucd1d \uacc4\uc57d\uac74\uc218", f"{len(df_sel):,}\uac74")
+    m2.metric("\ucd1d \ub300\uc0c1\uc11c\ub958\uc218", f"{target_total:,}\uac74")
+    m3.metric("\ubbf8\ucc98\ub9ac\uc728", f"{miss_rate:.1f}%")
+    m4.metric("\uc2a4\uce94\uc728", f"{scan_rate:.1f}%")
+    st.caption(f"FA / \ube44\uad50 / \uc644\ud310 \ubbf8\uc2a4\uce94: {fa_t:,} / {bi_t:,} / {cs_t:,}")
     st.divider()
 
-    tab_dash, tab_map, tab_report, tab_ledger = st.tabs(["?? ????", "????", "?? ???", "???? ??"])
+    tab_dash, tab_map, tab_report, tab_ledger = st.tabs(["\ud604\ud669 \ub300\uc2dc\ubcf4\ub4dc", "\ubbf8\ucc98\ub9ac\ub9f5", "\uacc4\uce35 \ub9ac\ud3ec\ud2b8", "\uad00\ub9ac\ub300\uc7a5 \ucd9c\ub825"])
 
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
         with cs1:
-            search_text = st.text_input("?? ??", placeholder="??? ??")
+            search_text = st.text_input("\uc870\uc9c1 \uac80\uc0c9", placeholder="\uc870\uc9c1\uba85 \uc785\ub825")
         with cs2:
-            agg_group = st.selectbox("?? ??", ["??", "??", "??", "????"], key="agg_group")
+            agg_group = st.selectbox("\uc9d1\uacc4 \uae30\uc900", [dept_col, tg_col, ds_col, fam_col], key="agg_group")
 
         agg = df_sel.groupby(agg_group).agg(
             fa_miss_sum=("FA_miss", "sum"),
-            bi_miss_sum=("??_miss", "sum"),
-            cs_miss_sum=("??_miss", "sum"),
-            target_sum=("???", "sum"),
-            scan_sum=("???", "sum"),
+            bi_miss_sum=(bi_miss_col, "sum"),
+            cs_miss_sum=(cs_miss_col, "sum"),
+            target_sum=(target_col, "sum"),
+            scan_sum=(scan_col, "sum"),
         ).reset_index()
         agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
         agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
         agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
         agg = agg.rename(columns={
-            agg_group: "??",
-            "fa_miss_sum": "FA??_???",
-            "bi_miss_sum": "????_???",
-            "cs_miss_sum": "????_???",
-            "target_sum": "???",
-            "scan_sum": "???",
-            "total_miss": "?_???",
-            "miss_rate": "????",
-            "scan_rate": "???",
+            agg_group: "\uc870\uc9c1",
+            "fa_miss_sum": "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94",
+            "bi_miss_sum": "\ube44\uad50\uc124\uba85_\ubbf8\uc2a4\uce94",
+            "cs_miss_sum": "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94",
+            "target_sum": "\ub300\uc0c1\uac74",
+            "scan_sum": "\uc2a4\uce94\uac74",
+            "total_miss": "\ucd1d_\ubbf8\uc2a4\uce94",
+            "miss_rate": "\ubbf8\ucc98\ub9ac\uc728",
+            "scan_rate": "\uc2a4\uce94\uc728",
         })
         if search_text:
-            agg = agg[agg["??"].astype(str).str.contains(search_text, case=False, na=False)]
-        agg = agg.sort_values("?_???", ascending=False).reset_index(drop=True)
-        agg.insert(0, "??", range(1, len(agg) + 1))
+            agg = agg[agg["\uc870\uc9c1"].astype(str).str.contains(search_text, case=False, na=False)]
+        agg = agg.sort_values("\ucd1d_\ubbf8\uc2a4\uce94", ascending=False).reset_index(drop=True)
+        agg.insert(0, "\uc21c\uc704", range(1, len(agg) + 1))
 
         if agg.empty:
-            st.info("??? ?? ???? ????.")
+            st.info("\uc870\uac74\uc5d0 \ub9de\ub294 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
         else:
             st.dataframe(
-                agg[["??", "??", "???", "???", "?_???", "????", "???", "FA??_???", "????_???", "????_???"]].style.format({
-                    "??": "{:,}",
-                    "???": "{:,}",
-                    "???": "{:,}",
-                    "?_???": "{:,}",
-                    "????": "{:.1f}%",
-                    "???": "{:.1f}%",
-                    "FA??_???": "{:,}",
-                    "????_???": "{:,}",
-                    "????_???": "{:,}",
+                agg[["\uc21c\uc704", "\uc870\uc9c1", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ucd1d_\ubbf8\uc2a4\uce94", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728", "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94", "\ube44\uad50\uc124\uba85_\ubbf8\uc2a4\uce94", "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94"]].style.format({
+                    "\uc21c\uc704": "{:,}",
+                    "\ub300\uc0c1\uac74": "{:,}",
+                    "\uc2a4\uce94\uac74": "{:,}",
+                    "\ucd1d_\ubbf8\uc2a4\uce94": "{:,}",
+                    "\ubbf8\ucc98\ub9ac\uc728": "{:.1f}%",
+                    "\uc2a4\uce94\uc728": "{:.1f}%",
+                    "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94": "{:,}",
+                    "\ube44\uad50\uc124\uba85_\ubbf8\uc2a4\uce94": "{:,}",
+                    "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94": "{:,}",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
 
-            top_n = st.slider("?? ?? ??", 5, 30, 20, key="dash_top_n")
+            top_n = st.slider("\ucc28\ud2b8 \ud45c\uc2dc \uac1c\uc218", 5, 30, 20, key="dash_top_n")
             top = agg.head(top_n)
             c1, c2 = st.columns(2)
             with c1:
-                doc_types = st.multiselect("?? ??", ["FA??", "????", "????", "? ???"], default=["? ???"], key="dash_doc_types")
+                doc_types = st.multiselect("\ud45c\uc2dc \uc11c\ub958", ["FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4", "\ucd1d \ubbf8\uc2a4\uce94"], default=["\ucd1d \ubbf8\uc2a4\uce94"], key="dash_doc_types")
                 if doc_types:
-                    max_v = top["?_???"].max()
+                    max_v = top["\ucd1d_\ubbf8\uc2a4\uce94"].max()
                     yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
-                    if len(doc_types) == 1 and doc_types[0] == "? ???":
+                    if len(doc_types) == 1 and doc_types[0] == "\ucd1d \ubbf8\uc2a4\uce94":
                         fig = go.Figure()
-                        fig.add_trace(go.Bar(x=top["??"], y=top["?_???"], text=top["?_???"], textposition="outside", marker_color=top["?_???"], marker_colorscale="Reds"))
+                        fig.add_trace(go.Bar(x=top["\uc870\uc9c1"], y=top["\ucd1d_\ubbf8\uc2a4\uce94"], text=top["\ucd1d_\ubbf8\uc2a4\uce94"], textposition="outside", marker_color=top["\ucd1d_\ubbf8\uc2a4\uce94"], marker_colorscale="Reds"))
                     elif len(doc_types) == 1:
-                        col_map = {"FA??": "FA??_???", "????": "????_???", "????": "????_???"}
-                        fig = px.bar(top, x="??", y=col_map[doc_types[0]], title=f"{doc_types[0]} ??? TOP {top_n}", text=col_map[doc_types[0]], color=col_map[doc_types[0]], color_continuous_scale="Blues")
+                        col_map = {
+                            "FA\uace0\uc9c0": "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94",
+                            "\ube44\uad50\uc124\uba85": "\ube44\uad50\uc124\uba85_\ubbf8\uc2a4\uce94",
+                            "\uc644\uc804\ud310\ub9e4": "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94",
+                        }
+                        fig = px.bar(top, x="\uc870\uc9c1", y=col_map[doc_types[0]], title=f"{doc_types[0]} \ubbf8\uc2a4\uce94 TOP {top_n}", text=col_map[doc_types[0]], color=col_map[doc_types[0]], color_continuous_scale="Blues")
                     else:
-                        chart_mode = st.radio("?? ??", ["???", "???"], horizontal=True, key="dash_chart_mode")
-                        col_map = {"FA??": "FA??_???", "????": "????_???", "????": "????_???", "? ???": "?_???"}
-                        p = top[["??"] + [col_map[d] for d in doc_types]].copy()
-                        p.columns = ["??"] + doc_types
-                        p = p.melt("??", var_name="??", value_name="??")
-                        fig = px.bar(p, x="??", y="??", color="??", barmode="group" if chart_mode == "???" else "stack")
+                        chart_mode = st.radio("\ucc28\ud2b8 \uc720\ud615", ["\uadf8\ub8f9\ud615", "\ub204\uc801\ud615"], horizontal=True, key="dash_chart_mode")
+                        col_map = {
+                            "FA\uace0\uc9c0": "FA\uace0\uc9c0_\ubbf8\uc2a4\uce94",
+                            "\ube44\uad50\uc124\uba85": "\ube44\uad50\uc124\uba85_\ubbf8\uc2a4\uce94",
+                            "\uc644\uc804\ud310\ub9e4": "\uc644\uc804\ud310\ub9e4_\ubbf8\uc2a4\uce94",
+                            "\ucd1d \ubbf8\uc2a4\uce94": "\ucd1d_\ubbf8\uc2a4\uce94",
+                        }
+                        p = top[["\uc870\uc9c1"] + [col_map[d] for d in doc_types]].copy()
+                        p.columns = ["\uc870\uc9c1"] + doc_types
+                        p = p.melt("\uc870\uc9c1", var_name="\uc885\ub958", value_name="\uac74\uc218")
+                        fig = px.bar(p, x="\uc870\uc9c1", y="\uac74\uc218", color="\uc885\ub958", barmode="group" if chart_mode == "\uadf8\ub8f9\ud615" else "stack")
                     fig.update_layout(xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
                     st.plotly_chart(fig, use_container_width=True)
             with c2:
-                max_v = top["?_???"].max()
+                max_v = top["\ucd1d_\ubbf8\uc2a4\uce94"].max()
                 yr = [0, max_v * 1.2] if max_v > 0 else [0, 10]
                 fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(x=top["??"], y=top["?_???"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
-                fig2.update_layout(title=f"??? ?? ?? TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
+                fig2.add_trace(go.Scatter(x=top["\uc870\uc9c1"], y=top["\ucd1d_\ubbf8\uc2a4\uce94"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
+                fig2.update_layout(title=f"\ubbf8\ucc98\ub9ac \uac74\uc218 \ucd94\uc774 TOP {top_n}", xaxis_tickangle=-45, yaxis=dict(range=yr), height=420)
                 st.plotly_chart(fig2, use_container_width=True)
 
     with tab_map:
-        st.subheader("??? ?? ???")
+        st.subheader("\ubbf8\ucc98\ub9ac \ubd84\ud3ec \uc2dc\uac01\ud654")
         mc1, mc2 = st.columns([1, 2])
         with mc1:
-            map_level = st.selectbox("?? ??", ["??", "??", "??", "????"], key="map_level")
+            map_level = st.selectbox("\uc9d1\uacc4 \ub2e8\uc704", [dept_col, tg_col, ds_col, fam_col], key="map_level")
         with mc2:
-            map_type = st.radio("?? ??", ["?? ??", "???"], horizontal=True, key="map_type")
+            map_type = st.radio("\ucc28\ud2b8 \uc720\ud615", ["\ud30c\uc774 \ucc28\ud2b8", "\ud2b8\ub9ac\ub9f5"], horizontal=True, key="map_type")
 
         map_agg = df_sel.groupby(map_level).agg(
-            miss_sum=("???", "sum"),
-            target_sum=("???", "sum"),
-            scan_sum=("???", "sum"),
+            miss_sum=(miss_col, "sum"),
+            target_sum=(target_col, "sum"),
+            scan_sum=(scan_col, "sum"),
         ).reset_index()
         map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
         map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
-        map_agg = map_agg.rename(columns={
-            map_level: "??",
-            "miss_sum": "???",
-            "target_sum": "???",
-            "scan_sum": "???",
-            "miss_rate": "????",
-            "scan_rate": "???",
-        })
-        map_agg = map_agg[map_agg["???"] > 0].sort_values("???", ascending=False)
+        map_agg = map_agg.rename(columns={map_level: "\uc870\uc9c1"})
+        map_agg = map_agg[map_agg["miss_sum"] > 0].sort_values("miss_sum", ascending=False)
 
         if map_agg.empty:
-            st.info("??? ??? ?? ???? ????.")
+            st.info("\ubbf8\ucc98\ub9ac \uac74\uc218\uac00 \uc788\ub294 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
         else:
-            if map_type == "?? ??":
-                fig_pie = px.pie(map_agg, values="???", names="??", title="??? ??? ?? ??", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+            if map_type == "\ud30c\uc774 \ucc28\ud2b8":
+                fig_pie = px.pie(map_agg, values="miss_sum", names="\uc870\uc9c1", title=f"{map_level}\ubcc4 \ubbf8\uc2a4\uce94 \uac74\uc218 \ube44\uc911", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
                 fig_pie.update_traces(textposition="inside", textinfo="percent+label")
                 fig_pie.update_layout(height=500)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                fig_tree = px.treemap(map_agg, path=["??"], values="???", color="????", title="??? ??? ??", color_continuous_scale="RdYlGn_r")
+                fig_tree = px.treemap(map_agg, path=["\uc870\uc9c1"], values="miss_sum", color="miss_rate", title=f"{map_level}\ubcc4 \ubbf8\ucc98\ub9ac \ubd84\ud3ec", color_continuous_scale="RdYlGn_r")
                 fig_tree.update_layout(height=500)
                 st.plotly_chart(fig_tree, use_container_width=True)
 
+            map_display = map_agg.rename(columns={
+                "miss_sum": "\ubbf8\uc2a4\uce94",
+                "target_sum": "\ub300\uc0c1\uac74",
+                "scan_sum": "\uc2a4\uce94\uac74",
+                "miss_rate": "\ubbf8\ucc98\ub9ac\uc728",
+                "scan_rate": "\uc2a4\uce94\uc728",
+            })
             st.dataframe(
-                map_agg.style.format({
-                    "???": "{:,}",
-                    "???": "{:,}",
-                    "???": "{:,}",
-                    "????": "{:.1f}%",
-                    "???": "{:.1f}%",
+                map_display.style.format({
+                    "\ubbf8\uc2a4\uce94": "{:,}",
+                    "\ub300\uc0c1\uac74": "{:,}",
+                    "\uc2a4\uce94\uac74": "{:,}",
+                    "\ubbf8\ucc98\ub9ac\uc728": "{:.1f}%",
+                    "\uc2a4\uce94\uc728": "{:.1f}%",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
 
     with tab_report:
-        st.subheader("?? ??? ?? ??? ??? ??")
+        st.subheader("\uc804\uccb4 \ub370\uc774\ud130 \uae30\ubc18 \uacc4\uce35\ubcc4 \ubbf8\ucc98\ub9ac \ud604\ud669")
         report_df = build_hierarchy_report(df, sel_months)
         if report_df.empty:
-            st.info("???? ????.")
+            st.info("\ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
         else:
             def style_row(row):
-                if row["??"] == "???":
+                if row["\uad6c\ubd84"] == "\ubd80\ubb38\uacc4":
                     return ["background-color:#1F3864;color:white;font-weight:bold"] * len(row)
-                if row["??"] == "???":
+                if row["\uad6c\ubd84"] == "\ucd1d\uad04\uacc4":
                     return ["background-color:#2E75B6;color:white;font-weight:bold"] * len(row)
-                if row["??"] == "???":
+                if row["\uad6c\ubd84"] == "\ubd80\uc11c\uacc4":
                     return ["background-color:#D9E1F2;font-weight:bold"] * len(row)
                 return [""] * len(row)
 
             st.dataframe(
                 report_df.style.apply(style_row, axis=1).format({
                     "FA": "{:,}",
-                    "??": "{:,}",
-                    "??": "{:,}",
-                    "????": "{:,}",
-                    "???": "{:,}",
-                    "???": "{:,}",
-                    "????": "{:.1f}%",
-                    "???": "{:.1f}%",
+                    "\ube44\uad50": "{:,}",
+                    "\uc644\ud310": "{:,}",
+                    "\ucd1d\ubbf8\uc2a4\uce94": "{:,}",
+                    "\ub300\uc0c1\uac74": "{:,}",
+                    "\uc2a4\uce94\uac74": "{:,}",
+                    "\ubbf8\ucc98\ub9ac\uc728": "{:.1f}%",
+                    "\uc2a4\uce94\uc728": "{:.1f}%",
                 }),
                 use_container_width=True,
                 hide_index=True,
@@ -1166,14 +1178,14 @@ def dashboard_page():
             if not pivot_df.empty:
                 pivot_display = pivot_df.copy()
                 for col in pivot_display.columns:
-                    if col not in ["??", "??", "??", "??"] and not col.endswith("_????") and not col.endswith("_???"):
+                    if col not in ["\uad6c\ubd84", dept_col, tg_col, ds_col] and not col.endswith("_\ubbf8\ucc98\ub9ac\uc728") and not col.endswith("_\uc2a4\uce94\uc728"):
                         pivot_display[col] = pivot_display[col].apply(lambda x: int(x) if pd.notna(x) else "")
                 st.dataframe(
                     pivot_display.style.format({
                         col: "{:,}" for col in pivot_display.columns
-                        if col not in ["??", "??", "??", "??"] and not col.endswith("_????") and not col.endswith("_???")
+                        if col not in ["\uad6c\ubd84", dept_col, tg_col, ds_col] and not col.endswith("_\ubbf8\ucc98\ub9ac\uc728") and not col.endswith("_\uc2a4\uce94\uc728")
                     }).format({
-                        col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_????") or col.endswith("_???")
+                        col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_\ubbf8\ucc98\ub9ac\uc728") or col.endswith("_\uc2a4\uce94\uc728")
                     }),
                     use_container_width=True,
                     hide_index=True,
@@ -1182,92 +1194,88 @@ def dashboard_page():
 
             cr1, cr2 = st.columns(2)
             with cr1:
-                if st.button("?? ??? Excel", use_container_width=True):
-                    with st.spinner("?? ?..."):
+                if st.button("\uacc4\uce35 \ub9ac\ud3ec\ud2b8 Excel", use_container_width=True):
+                    with st.spinner("\uc0dd\uc131 \uc911..."):
                         buf = report_excel(df, sel_months)
-                    st.download_button("Excel ????", buf, f"?????_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_rpt_xl")
+                    st.download_button("Excel \ub2e4\uc6b4\ub85c\ub4dc", buf, f"\uacc4\uce35\ub9ac\ud3ec\ud2b8_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_rpt_xl")
             with cr2:
-                if st.button("?? ??? PDF", use_container_width=True):
-                    with st.spinner("?? ?..."):
+                if st.button("\uacc4\uce35 \ub9ac\ud3ec\ud2b8 PDF", use_container_width=True):
+                    with st.spinner("\uc0dd\uc131 \uc911..."):
                         buf2 = report_pdf(df, sel_months)
-                    st.download_button("PDF ????", buf2, f"?????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_rpt_pdf")
+                    st.download_button("PDF \ub2e4\uc6b4\ub85c\ub4dc", buf2, f"\uacc4\uce35\ub9ac\ud3ec\ud2b8_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_rpt_pdf")
 
             st.markdown("---")
-            if st.button("?? ??? PDF", use_container_width=True, key="dl_fullpage_pdf"):
-                with st.spinner("?? ??? PDF ?? ?..."):
-                    agg_group_state = st.session_state.get("agg_group", "??")
-                    map_level_state = st.session_state.get("map_level", "??")
-                    dash_doc_types = st.session_state.get("dash_doc_types", ["? ???"])
-                    dash_chart_mode = st.session_state.get("dash_chart_mode", "???")
+            if st.button("\uc804\uccb4 \ud398\uc774\uc9c0 PDF", use_container_width=True, key="dl_fullpage_pdf"):
+                with st.spinner("\uc804\uccb4 \ud398\uc774\uc9c0 PDF \uc0dd\uc131 \uc911..."):
+                    agg_group_state = st.session_state.get("agg_group", dept_col)
+                    map_level_state = st.session_state.get("map_level", dept_col)
+                    dash_doc_types = st.session_state.get("dash_doc_types", ["\ucd1d \ubbf8\uc2a4\uce94"])
+                    dash_chart_mode = st.session_state.get("dash_chart_mode", "\uadf8\ub8f9\ud615")
                     dash_top_n = st.session_state.get("dash_top_n", 10)
-                    map_type_state = st.session_state.get("map_type", "???")
+                    map_type_state = st.session_state.get("map_type", "\ud2b8\ub9ac\ub9f5")
                     buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, dash_top_n, map_type_state)
-                    st.download_button("?? ??? PDF ????", buf_full, f"????????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
+                    st.download_button("\uc804\uccb4 \ud398\uc774\uc9c0 PDF \ub2e4\uc6b4\ub85c\ub4dc", buf_full, f"\uc804\uccb4\ud398\uc774\uc9c0\ub9ac\ud3ec\ud2b8_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
 
     with tab_ledger:
-        st.subheader("???? ?? ? ??")
+        st.subheader("\uad00\ub9ac\ub300\uc7a5 \uc120\uc815 \ubc0f \ucd9c\ub825")
         cf1, cf2, cf3 = st.columns(3)
         with cf1:
-            sel_bm = st.selectbox("??", ["??"] + sorted(df_sel["??"].dropna().unique().tolist()), key="lg_bm")
-        df_l1 = df_sel if sel_bm == "??" else df_sel[df_sel["??"] == sel_bm]
+            sel_bm = st.selectbox("\ubd80\ubb38", ["\uc804\uccb4"] + sorted(df_sel[dept_col].dropna().unique().tolist()), key="lg_bm")
+        df_l1 = df_sel if sel_bm == "\uc804\uccb4" else df_sel[df_sel[dept_col] == sel_bm]
         with cf2:
-            sel_tg = st.selectbox("??", ["??"] + sorted(df_l1["??"].dropna().unique().tolist()), key="lg_tg")
-        df_l2 = df_l1 if sel_tg == "??" else df_l1[df_l1["??"] == sel_tg]
+            sel_tg = st.selectbox("\ucd1d\uad04", ["\uc804\uccb4"] + sorted(df_l1[tg_col].dropna().unique().tolist()), key="lg_tg")
+        df_l2 = df_l1 if sel_tg == "\uc804\uccb4" else df_l1[df_l1[tg_col] == sel_tg]
         with cf3:
-            sel_ds = st.selectbox("??", ["??"] + sorted(df_l2["??"].dropna().unique().tolist()), key="lg_ds")
-        df_l3 = df_l2 if sel_ds == "??" else df_l2[df_l2["??"] == sel_ds]
+            sel_ds = st.selectbox("\ubd80\uc11c", ["\uc804\uccb4"] + sorted(df_l2[ds_col].dropna().unique().tolist()), key="lg_ds")
+        df_l3 = df_l2 if sel_ds == "\uc804\uccb4" else df_l2[df_l2[ds_col] == sel_ds]
 
         targets = get_ledger_targets(df_l3, sel_months)
         if not targets:
-            st.success("??? ?? ??? ????.")
+            st.success("\ubbf8\uc2a4\uce94 \ubc1c\uc0dd \ub300\uc0c1\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
         else:
-            prev = [
-                {
-                    "??": r["??"],
-                    "??": r["??"],
-                    "??": dept,
-                    "????": r["????"],
-                    "FA": int(r["FA"]),
-                    "??": int(r["??"]),
-                    "??": int(r["??"]),
-                    "????": int(r["????"]),
-                    "???": int(r["??"]),
-                    "???": int(r["??"]),
-                }
-                for dept, grp in targets.items()
-                for _, r in grp.iterrows()
-            ]
+            prev = [{
+                dept_col: r[dept_col],
+                tg_col: r[tg_col],
+                ds_col: dept,
+                fam_col: r[fam_col],
+                "FA": int(r["FA"]),
+                "\ube44\uad50": int(r["\ube44\uad50"]),
+                "\uc644\ud310": int(r["\uc644\ud310"]),
+                "\ucd1d\ubbf8\uc2a4\uce94": int(r["\ucd1d\ubbf8\uc2a4\uce94"]),
+                target_col: int(r["\ub300\uc0c1"]),
+                scan_col: int(r["\uc2a4\uce94"]),
+            } for dept, grp in targets.items() for _, r in grp.iterrows()]
             prev_df = pd.DataFrame(prev)
             st.dataframe(
                 prev_df.style.format({
                     "FA": "{:,}",
-                    "??": "{:,}",
-                    "??": "{:,}",
-                    "????": "{:,}",
-                    "???": "{:,}",
-                    "???": "{:,}",
+                    "\ube44\uad50": "{:,}",
+                    "\uc644\ud310": "{:,}",
+                    "\ucd1d\ubbf8\uc2a4\uce94": "{:,}",
+                    target_col: "{:,}",
+                    scan_col: "{:,}",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
 
             all_depts = sorted(targets.keys())
-            sel_depts = st.multiselect("?? ??", all_depts, default=all_depts, key="lg_sel_dept")
+            sel_depts = st.multiselect("\ucd9c\ub825 \ubd80\uc11c", all_depts, default=all_depts, key="lg_sel_dept")
             if not sel_depts:
-                st.warning("??? ??? 1? ?? ??? ???.")
+                st.warning("\ucd9c\ub825\ud560 \ubd80\uc11c\ub97c 1\uac1c \uc774\uc0c1 \uc120\ud0dd\ud574 \uc8fc\uc138\uc694.")
             else:
                 out_targets = {d: targets[d] for d in sel_depts if d in targets}
                 cd1, cd2 = st.columns(2)
                 with cd1:
-                    if st.button("???? PDF", use_container_width=True, key="gen_pdf"):
-                        with st.spinner("?? ?..."):
+                    if st.button("\uad00\ub9ac\ub300\uc7a5 PDF", use_container_width=True, key="gen_pdf"):
+                        with st.spinner("\uc0dd\uc131 \uc911..."):
                             pb = ledger_pdf(out_targets, period_text, df_l3)
-                        st.download_button("PDF ????", pb, f"????_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_ldg_pdf")
+                        st.download_button("PDF \ub2e4\uc6b4\ub85c\ub4dc", pb, f"\uad00\ub9ac\ub300\uc7a5_{period_text.replace(' ', '_')}.pdf", "application/pdf", key="dl_ldg_pdf")
                 with cd2:
-                    if st.button("???? Excel", use_container_width=True, key="gen_xl"):
-                        with st.spinner("?? ?..."):
+                    if st.button("\uad00\ub9ac\ub300\uc7a5 Excel", use_container_width=True, key="gen_xl"):
+                        with st.spinner("\uc0dd\uc131 \uc911..."):
                             xb = ledger_excel(out_targets, period_text, df_l3)
-                        st.download_button("Excel ????", xb, f"????_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_ldg_xl")
+                        st.download_button("Excel \ub2e4\uc6b4\ub85c\ub4dc", xb, f"\uad00\ub9ac\ub300\uc7a5_{period_text.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_ldg_xl")
 
 # ==========================================
 # 13. main
