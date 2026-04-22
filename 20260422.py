@@ -640,7 +640,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ["3", "고지의무확인서", "금융소비자보호법 26조와\n동법시행령 24조", "판매자 권한·책임·보상 관련 핵심 사항 고지, 소비자 소인 예방"],
             ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)", "금융소비자보호법 제17·19조\n영업지원기준안", "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
         ]
-        for row_data in docs_
+        for row_data in docs_data:
             for ci, val in enumerate(row_data, 1):
                 c = ws_c.cell(r, ci, val); c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
             ws_c.row_dimensions[r].height = 35; r += 1
@@ -699,7 +699,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ws_f.column_dimensions[get_column_letter(1)].width = 6; ws_f.column_dimensions[get_column_letter(2)].width = 20
             ws_f.column_dimensions[get_column_letter(3)].width = 25; ws_f.column_dimensions[get_column_letter(4)].width = 45
             r_f += 1
-            for row_data in docs_
+            for row_data in docs_data:
                 for ci, val in enumerate(row_data, 1):
                     c = ws_f.cell(r_f, ci, val); c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
                 ws_f.row_dimensions[r_f].height = 35; r_f += 1
