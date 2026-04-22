@@ -60,7 +60,7 @@ REQUIRED_DOCS_TABLE = [
 ]
 
 # ==========================================
-# 2. 데이터 로딩
+# 2. 데이터 로딩 (GitHub 엑셀 기반)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -72,10 +72,13 @@ def load_data():
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
         
+        # [수정] 컬럼명 공백 제거로 Key Error 방지
         df.columns = df.columns.str.strip()
+        
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         
+        # 컬럼명 안전하게 매핑
         df["FA고지_c"] = df["FA고지"].fillna("").astype(str).str.strip()
         df["비교설명_c"] = df["비교설명"].fillna("").astype(str).str.strip()
         df["완전판매_c"] = df["완전판매"].fillna("").astype(str).str.strip()
@@ -271,7 +274,7 @@ def get_ledger_targets(df, months):
     return {dept: grp for dept, grp in agg.groupby("부서")}
 
 # ==========================================
-# 6. 한글 폰트 및 스타일 (PDF 줄바꿈/여백 최적화)
+# 6. 한글 폰트 및 스타일
 # ==========================================
 @st.cache_resource
 def register_korean_font():
@@ -307,7 +310,7 @@ def _pdf_styles(fn):
 
 def _tbl(data, cw, fn, header_rows=1, sub_rows=None, align="CENTER"):
     if not data or len(data) < 1: return Spacer(1,0)
-    # [수정] 페이지 이탈 방지: wordWrap="CJK" 적용, 여백 최소화(2pt), 폰트 7pt
+    # [수정] 페이지 이탈 방지: wordWrap="CJK", 폰트 7pt, 여백 최소화
     cw_scaled = [w * mm for w in cw]
     align_map = {"LEFT":0, "CENTER":1, "RIGHT":2}
     align_value = align_map.get(align.upper(), 1)
@@ -372,6 +375,7 @@ def report_excel(df, months):
     
     ws.merge_cells("A1:L1"); ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
     ws["A1"].font = Font(name=tfn,size=12,bold=True); ws["A1"].alignment = Alignment(horizontal="center"); ws.row_dimensions[1].height = 22
+    # [수정] 헤더에 (%) 단위 명시
     headers = ["구분","부문","총괄","부서","영업가족","대상건","대상스캔건","전체스캔","총미스캔","스캔율 (%)","미처리율 (%)"]
     cws = [14,20,20,20,24,12,14,12,14,12,16]
     for ci,(h,w) in enumerate(zip(headers,cws),1):
@@ -442,6 +446,7 @@ def report_pdf(df, months):
     report = build_hierarchy_report(df, months)
     if not report.empty:
         E.append(Paragraph("▶ 부문 / 총괄 / 부서 / 영업가족 계층 집계", st_["section"]))
+        # [수정] 헤더에 (%) 단위 명시
         hdr=[["구분","부문","총괄","부서","영업가족","대상건","대상스캔건","전체스캔","총미스캔","스캔율 (%)","미처리율 (%)"]]
         drows, sub_idx = [], []
         for i,(_,r) in enumerate(report.iterrows()):
@@ -490,6 +495,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     agg = build_group_scan_stats(df_sel, agg_group).sort_values("총미스캔", ascending=False).head(dash_top_n)
     if not agg.empty:
         E.append(Paragraph(f"▶ 현황 대시보드 차트 (집계: {agg_group})", st_["section"]))
+        # [수정] 헤더에 (%) 단위 명시
         hdr = [["조직", "대상건", "대상스캔건", "전체스캔", "총미스캔", "스캔율 (%)", "미처리율 (%)"]]
         rows = [[r["조직"], f"{int(r['대상건']):,}", f"{int(r['대상스캔건']):,}", f"{int(r['전체스캔']):,}",
                  f"{int(r['총미스캔']):,}", f"{r['스캔율']:.1f}", f"{r['미처리율']:.1f}"] for _, r in agg.iterrows()]
@@ -508,6 +514,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     map_agg = map_agg.sort_values("미스캔", ascending=False).head(dash_top_n)
     if not map_agg.empty:
         E.append(Paragraph(f"▶ {map_level}별 미스캔 분포 ({map_type})", st_["section"]))
+        # [수정] 헤더에 (%) 단위 명시
         hdr = [[map_level, "미스캔", "미처리율 (%)", "대상건"]]
         rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
         E.append(_tbl(hdr + rows, [95, 52, 52, 52], fn)); E.append(Spacer(1,8))
@@ -633,7 +640,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
             ["3", "고지의무확인서", "금융소비자보호법 26조와\n동법시행령 24조", "판매자 권한·책임·보상 관련 핵심 사항 고지, 소비자 소인 예방"],
             ["4", "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액)", "금융소비자보호법 제17·19조\n영업지원기준안", "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보"]
         ]
-        for row_data in docs_
+        for row_data in docs_data:
             for ci, val in enumerate(row_data, 1):
                 c = ws_c.cell(r, ci, val); c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left" if ci > 1 else "center", vertical="top", wrapText=True)
             ws_c.row_dimensions[r].height = 35; r += 1
@@ -803,10 +810,12 @@ def dashboard_page():
         if map_agg.empty: st.info("미처리 건수가 있는 데이터가 없습니다.")
         else:
             if map_type == "🥧 원그래프":
+                # [수정] names=map_level (ValueError 방지)
                 fig_pie = px.pie(map_agg, values="미스캔", names=map_level, title=f"{map_level}별 미스캔 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label'); fig_pie.update_layout(height=500)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
+                # [수정] path=[map_level] (ValueError 방지)
                 fig_tree = px.treemap(map_agg, path=[map_level], values="미스캔", color="미처리율", title=f"{map_level}별 미처리 분포", color_continuous_scale="RdYlGn_r")
                 fig_tree.update_layout(height=500); st.plotly_chart(fig_tree, use_container_width=True)
             st.dataframe(map_agg.style.format({"미스캔":"{:,}","대상건":"{:,}","미처리율":"{:.1f}"}), use_container_width=True, hide_index=True)
@@ -821,6 +830,7 @@ def dashboard_page():
                 elif row["구분"]=="총괄계": return ["background-color:#2E75B6;color:white;font-weight:bold"]*len(row)
                 elif row["구분"]=="부서계": return ["background-color:#D9E1F2;font-weight:bold"]*len(row)
                 return [""]*len(row)
+            # [수정] 헤더에 (%) 단위 명시
             disp_cols = ["구분","부문","총괄","부서","영업가족","대상건","대상스캔건","전체스캔","총미스캔","스캔율 (%)","미처리율 (%)"]
             disp_df = report_df[disp_cols].copy()
             st.markdown("""
@@ -831,6 +841,7 @@ def dashboard_page():
             </style>
             """, unsafe_allow_html=True)
             st.caption("개인정보동의서 집계 제외 | 스캔율 = 전체스캔/대상스캔건×100 | 미처리율=100-스캔율")
+            # [수정] 헤더와 포맷 매칭
             st.dataframe(disp_df.style.apply(style_row, axis=1).format({
                 "대상건":"{:,}","대상스캔건":"{:,}","전체스캔":"{:,}","총미스캔":"{:,}","스캔율 (%)":"{:.1f}","미처리율 (%)":"{:.1f}"
             }), use_container_width=True, hide_index=True, height=500)
