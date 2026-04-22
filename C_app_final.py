@@ -433,143 +433,232 @@ def _sig_table(labels, fn, cw=120):
 # ==========================================
 # 7. 전체 계층 리포트 Excel
 # ==========================================
+
 def report_excel(df, months):
-    wb = Workbook(); ws = wb.active; ws.title="계층별_미처리현황"
-    tfn, hf, bf = "맑은 고딕", Font(name="맑은 고딕",size=9,bold=True,color="FFFFFF"), Font(name="맑은 고딕",size=9)
-    bdr = Border(left=Side("thin"),right=Side("thin"),top=Side("thin"),bottom=Side("thin"))
-    fills = {"부문계":PatternFill("solid",fgColor="1F3864"), "총괄계":PatternFill("solid",fgColor="2E75B6"),
-             "부서계":PatternFill("solid",fgColor="D9E1F2"), "영업가족_alt":PatternFill("solid",fgColor="EEF3FB")}
-    fonts_wc = {"부문계":Font(name=tfn,size=9,bold=True,color="FFFFFF"), "총괄계":Font(name=tfn,size=9,bold=True,color="FFFFFF"),
-                "부서계":Font(name=tfn,size=9,bold=True)}
-    h_fill = PatternFill("solid",fgColor="4472C4")
-    alt_fill = PatternFill("solid",fgColor="EEF3FB")
-    today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
-    
-    ws.merge_cells("A1:K1"); ws["A1"] = f"서류 미처리 현황 계층별 집계  ·  기간: {period_str}  ·  발급: {today}"
-    ws["A1"].font = Font(name=tfn,size=12,bold=True); ws["A1"].alignment = Alignment(horizontal="center"); ws.row_dimensions[1].height = 22
-    headers = ["구분","부문","총괄","부서","영업가족","FA고지","비교설명","완전판매","총미스캔","대상건","미처리율"]
-    cws = [14,20,20,20,24,12,12,12,14,12,16]
-    for ci,(h,w) in enumerate(zip(headers,cws),1):
-        c=ws.cell(2,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center",vertical="center")
-        ws.column_dimensions[get_column_letter(ci)].width=w
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "\uacc4\uce35\ub9ac\ud3ec\ud2b8"
 
+    tfn = "Malgun Gothic"
+    hf = Font(name=tfn, size=9, bold=True, color="FFFFFF")
+    bf = Font(name=tfn, size=9)
+    bdr = Border(left=Side("thin"), right=Side("thin"), top=Side("thin"), bottom=Side("thin"))
+    h_fill = PatternFill("solid", fgColor="4472C4")
+    alt_fill = PatternFill("solid", fgColor="EEF3FB")
+    fills = {
+        "\ubd80\ubb38\uacc4": PatternFill("solid", fgColor="1F3864"),
+        "\ucd1d\uad04\uacc4": PatternFill("solid", fgColor="2E75B6"),
+        "\ubd80\uc11c\uacc4": PatternFill("solid", fgColor="D9E1F2"),
+        "data_alt": alt_fill,
+    }
+    fonts_wc = {
+        "\ubd80\ubb38\uacc4": Font(name=tfn, size=9, bold=True, color="FFFFFF"),
+        "\ucd1d\uad04\uacc4": Font(name=tfn, size=9, bold=True, color="FFFFFF"),
+        "\ubd80\uc11c\uacc4": Font(name=tfn, size=9, bold=True),
+    }
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    period_str = ", ".join(months) if months else "\uc804\uccb4"
     report = build_hierarchy_report(df, months)
-    if report.empty: return io.BytesIO()
-    ri = 3
-    for _, row in report.iterrows():
-        gbn = row["구분"]; rate_str = f"{row['미처리율']:.1f}%"
-        vals = [gbn, row["부문"], row["총괄"], row["부서"], row["영업가족"], row["FA"], row["비교"], row["완판"], row["총미스캔"], row["대상건"], rate_str]
-        fill = fills.get(gbn, fills["영업가족_alt"] if ri%2==0 else None)
-        fnt  = fonts_wc.get(gbn, bf)
-        for ci,v in enumerate(vals,1):
-            c=ws.cell(ri,ci,v); c.font=fnt; c.border=bdr; c.alignment=Alignment(horizontal="center",vertical="center")
-            if isinstance(v,(int,float)): c.number_format = "#,##0"
-            if fill: c.fill=fill
-        ri += 1
-
     monthly = build_monthly_hierarchy(df, months)
-    if not monthly.empty:
-        ws2 = wb.create_sheet("월별_계층집계")
-        ws2.merge_cells("A1:K1"); ws2["A1"] = f"월별 계층 미처리 집계  ·  기간: {period_str}  ·  발급일: {today}"
-        ws2["A1"].font = Font(name=tfn,size=12,bold=True); ws2["A1"].alignment=Alignment(horizontal="center"); ws2.row_dimensions[1].height = 22
-        mhdr, mcws = ["월","구분","부문","총괄","부서","FA고지","비교설명","완전판매","총미스캔","대상건","미처리율"], [18,14,20,20,24,12,12,12,14,12,16]
-        for ci,(h,w) in enumerate(zip(mhdr,mcws),1):
-            c=ws2.cell(2,ci,h); c.font=hf; c.fill=h_fill; c.border=bdr; c.alignment=Alignment(horizontal="center"); ws2.column_dimensions[get_column_letter(ci)].width=w
-        for ri2,(_, r) in enumerate(monthly.iterrows(),3):
-            gbn=r["구분"]; rate_str = f"{r['미처리율']:.1f}%"
-            vals2=[r["월"],gbn,r["부문"],r["총괄"],r["부서"],r["FA"],r["비교"],r["완판"],r["총미스캔"],r["대상건"], rate_str]
-            fill2=fills.get(gbn, fills["영업가족_alt"] if ri2%2==0 else None); fnt2=fonts_wc.get(gbn,bf)
-            for ci,v in enumerate(vals2,1):
-                c=ws2.cell(ri2,ci,v); c.font=fnt2; c.border=bdr; c.alignment=Alignment(horizontal="center")
-                if isinstance(v,(int,float)): c.number_format = "#,##0"
-                if fill2: c.fill=fill2
-        pivot = build_monthly_hierarchy_pivot(df, months)
-        if not pivot.empty:
-            ws3 = wb.create_sheet("월별_피벗집계")
-            ws3.merge_cells("A1:Z1"); ws3["A1"] = f"월별 피벗형 계층 집계  ·  기간: {period_str}  ·  발급일: {today}"
-            ws3["A1"].font = Font(name=tfn,size=12,bold=True); ws3["A1"].alignment = Alignment(horizontal="center"); ws3.row_dimensions[1].height = 22
-            headers3 = pivot.columns.tolist()
-            widths3 = [16 if i < 4 else 12 for i in range(len(headers3))]
-            for ci,(h,w) in enumerate(zip(headers3,widths3),1):
-                c = ws3.cell(2,ci,h); c.font = hf; c.fill = h_fill; c.border = bdr; c.alignment = Alignment(horizontal="center", vertical="center")
-                ws3.column_dimensions[get_column_letter(ci)].width = w
-            for ri3, (_, pr) in enumerate(pivot.iterrows(), 3):
-                for ci, h in enumerate(headers3, 1):
-                    val = pr[h]
-                    if isinstance(val, (int, float)) and h.endswith("_미처리율"):
-                        c = ws3.cell(ri3, ci, float(val) / 100)
-                        c.number_format = "0.0%"
-                    else:
-                        c = ws3.cell(ri3, ci, val)
-                    c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="center")
-                    if isinstance(val,(int,float)) and not h.endswith("_미처리율"): c.number_format = "#,##0"
-                    if ri3 % 2 == 0: c.fill = alt_fill
-    buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+    pivot = build_monthly_hierarchy_pivot(df, months)
+    if report.empty:
+        return io.BytesIO()
 
-# ==========================================
-# 8. 전체 계층 리포트 PDF
-# ==========================================
+    headers = [
+        "\uad6c\ubd84", "\ubd80\ubb38", "\ucd1d\uad04", "\ubd80\uc11c", "\uc601\uc5c5\uac00\uc871",
+        "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4", "\ucd1d\ubbf8\uc2a4\uce94",
+        "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728",
+    ]
+    widths = [12, 14, 14, 14, 16, 10, 10, 10, 10, 10, 10, 10, 10]
+
+    ws.merge_cells("A1:M1")
+    ws["A1"] = f"\uacc4\uce35 \ub9ac\ud3ec\ud2b8 | \uae30\uac04: {period_str} | \uc0dd\uc131\uc77c: {today}"
+    ws["A1"].font = Font(name=tfn, size=12, bold=True)
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    for ci, (header, width) in enumerate(zip(headers, widths), 1):
+        c = ws.cell(2, ci, header)
+        c.font = hf
+        c.fill = h_fill
+        c.border = bdr
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(ci)].width = width
+
+    row_idx = 3
+    for _, row in report.iterrows():
+        gbn = row["\uad6c\ubd84"]
+        values = [
+            gbn, row["\ubd80\ubb38"], row["\ucd1d\uad04"], row["\ubd80\uc11c"], row["\uc601\uc5c5\uac00\uc871"],
+            int(row["FA"]), int(row["\ube44\uad50"]), int(row["\uc644\ud310"]), int(row["\ucd1d\ubbf8\uc2a4\uce94"]),
+            int(row["\ub300\uc0c1\uac74"]), int(row.get("\uc2a4\uce94\uac74", 0)), float(row["\ubbf8\ucc98\ub9ac\uc728"]), float(row.get("\uc2a4\uce94\uc728", 0.0)),
+        ]
+        fill = fills.get(gbn, fills["data_alt"] if row_idx % 2 == 0 else None)
+        font = fonts_wc.get(gbn, bf)
+        for ci, value in enumerate(values, 1):
+            c = ws.cell(row_idx, ci, value)
+            c.font = font
+            c.border = bdr
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            if ci in (12, 13):
+                c.number_format = '0.0"%"'
+            elif ci >= 6:
+                c.number_format = '#,##0'
+            if fill:
+                c.fill = fill
+        row_idx += 1
+
+    if not monthly.empty:
+        ws2 = wb.create_sheet("\uc6d4\ubcc4\uacc4\uce35")
+        ws2.merge_cells("A1:M1")
+        ws2["A1"] = f"\uc6d4\ubcc4 \uacc4\uce35 \ub9ac\ud3ec\ud2b8 | \uae30\uac04: {period_str} | \uc0dd\uc131\uc77c: {today}"
+        ws2["A1"].font = Font(name=tfn, size=12, bold=True)
+        ws2["A1"].alignment = Alignment(horizontal="center")
+        headers2 = ["\uc6d4", "\uad6c\ubd84", "\ubd80\ubb38", "\ucd1d\uad04", "\ubd80\uc11c", "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4", "\ucd1d\ubbf8\uc2a4\uce94", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]
+        widths2 = [12, 12, 14, 14, 14, 10, 10, 10, 10, 10, 10, 10, 10]
+        for ci, (header, width) in enumerate(zip(headers2, widths2), 1):
+            c = ws2.cell(2, ci, header)
+            c.font = hf
+            c.fill = h_fill
+            c.border = bdr
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            ws2.column_dimensions[get_column_letter(ci)].width = width
+        row_idx = 3
+        for _, row in monthly.iterrows():
+            gbn = row["\uad6c\ubd84"]
+            values = [
+                row["\uc6d4"], gbn, row["\ubd80\ubb38"], row["\ucd1d\uad04"], row["\ubd80\uc11c"],
+                int(row["FA"]), int(row["\ube44\uad50"]), int(row["\uc644\ud310"]), int(row["\ucd1d\ubbf8\uc2a4\uce94"]),
+                int(row["\ub300\uc0c1\uac74"]), int(row.get("\uc2a4\uce94\uac74", 0)), float(row["\ubbf8\ucc98\ub9ac\uc728"]), float(row.get("\uc2a4\uce94\uc728", 0.0)),
+            ]
+            fill = fills.get(gbn, fills["data_alt"] if row_idx % 2 == 0 else None)
+            font = fonts_wc.get(gbn, bf)
+            for ci, value in enumerate(values, 1):
+                c = ws2.cell(row_idx, ci, value)
+                c.font = font
+                c.border = bdr
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                if ci in (12, 13):
+                    c.number_format = '0.0"%"'
+                elif ci >= 6:
+                    c.number_format = '#,##0'
+                if fill:
+                    c.fill = fill
+            row_idx += 1
+
+    if not pivot.empty:
+        ws3 = wb.create_sheet("\uc6d4\ubcc4\ud53c\ubc97")
+        ws3.merge_cells(f"A1:{get_column_letter(len(pivot.columns))}1")
+        ws3["A1"] = f"\uc6d4\ubcc4 \ud53c\ubc97 \ub9ac\ud3ec\ud2b8 | \uae30\uac04: {period_str} | \uc0dd\uc131\uc77c: {today}"
+        ws3["A1"].font = Font(name=tfn, size=12, bold=True)
+        ws3["A1"].alignment = Alignment(horizontal="center")
+        headers3 = pivot.columns.tolist()
+        for ci, header in enumerate(headers3, 1):
+            c = ws3.cell(2, ci, header)
+            c.font = hf
+            c.fill = h_fill
+            c.border = bdr
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            ws3.column_dimensions[get_column_letter(ci)].width = 15 if ci > 4 else 18
+        for ri, (_, pr) in enumerate(pivot.iterrows(), 3):
+            for ci, header in enumerate(headers3, 1):
+                value = pr[header]
+                c = ws3.cell(ri, ci, value)
+                c.font = bf
+                c.border = bdr
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                if isinstance(value, (int, float)):
+                    if "\uc728" in str(header):
+                        c.number_format = '0.0"%"'
+                    else:
+                        c.number_format = '#,##0'
+                if ri % 2 == 0:
+                    c.fill = alt_fill
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def report_pdf(df, months):
-    fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
+    fn = register_korean_font()
+    st_ = _pdf_styles(fn)
+    buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
-    today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
-    E = [Paragraph("서류 미처리 현황 계층별 집계", st_["title"]), Paragraph(f"기간: {period_str}  |  발급일자: {today}", st_["date"]), HRFlowable(width="100%",thickness=1,color=colors.HexColor(HDR_CLR)), Spacer(1,6)]
+    today = datetime.now().strftime("%Y-%m-%d")
+    period_str = ", ".join(months) if months else "\uc804\uccb4"
+    elements = [
+        Paragraph("\uacc4\uce35 \ub9ac\ud3ec\ud2b8", st_["title"]),
+        Paragraph(f"\uae30\uac04: {period_str} | \uc0dd\uc131\uc77c: {today}", st_["date"]),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
+        Spacer(1, 6),
+    ]
+
     report = build_hierarchy_report(df, months)
     if not report.empty:
-        E.append(Paragraph("▶ 부문 / 총괄 / 부서 / 영업가족 계층 집계", st_["section"]))
-        hdr=[["구분","부문","총괄","부서","영업가족","증번수","전체대상","전체스캔","전체미스캔","스캔율"]]
-        drows, sub_idx = [], []
-        for i,(_,r) in enumerate(report.iterrows()):
-            drows.append([
-                r["구분"],
-                r["부문"],
-                r["총괄"],
-                r["부서"],
-                r["영업가족"],
-                f"{int(r['FA']):,}",
-                f"{int(r['비교']):,}",
-                f"{int(r['완판']):,}",
-                f"{int(r['총미스캔']):,}",
-                f"{int(r['대상건']):,}",
-                f"{r['미처리율']:.1f}%"
+        elements.append(Paragraph("\uc804\uccb4 \uacc4\uce35 \uc694\uc57d", st_["section"]))
+        hdr = [["\uad6c\ubd84", "\ubd80\ubb38", "\ucd1d\uad04", "\ubd80\uc11c", "\uc601\uc5c5\uac00\uc871", "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4", "\ucd1d\ubbf8\uc2a4\uce94", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]]
+        rows = []
+        sub_rows = []
+        for i, (_, r) in enumerate(report.iterrows(), 1):
+            rows.append([
+                r["\uad6c\ubd84"], r["\ubd80\ubb38"], r["\ucd1d\uad04"], r["\ubd80\uc11c"], r["\uc601\uc5c5\uac00\uc871"],
+                f"{int(r['FA']):,}", f"{int(r['\ube44\uad50']):,}", f"{int(r['\uc644\ud310']):,}", f"{int(r['\ucd1d\ubbf8\uc2a4\uce94']):,}",
+                f"{int(r['\ub300\uc0c1\uac74']):,}", f"{int(r.get('\uc2a4\uce94\uac74', 0)):,}",
+                f"{float(r['\ubbf8\ucc98\ub9ac\uc728']):.1f}%", f"{float(r.get('\uc2a4\uce94\uc728', 0.0)):.1f}%",
             ])
-            if r["구분"] in ("부문계","총괄계","부서계"): sub_idx.append(i+1)
-        E.append(_tbl(hdr+drows,[40,52,52,52,72,29,29,29,39,36,39],fn,sub_rows=sub_idx)); E.append(Spacer(1,8))
+            if r["\uad6c\ubd84"] in ("\ubd80\ubb38\uacc4", "\ucd1d\uad04\uacc4", "\ubd80\uc11c\uacc4"):
+                sub_rows.append(i)
+        elements.append(_tbl(hdr + rows, [34, 42, 42, 42, 54, 34, 34, 34, 36, 34, 34, 34, 34], fn, sub_rows=sub_rows))
+        elements.append(Spacer(1, 8))
+
     monthly = build_monthly_hierarchy(df, months)
     if not monthly.empty:
-        E.append(PageBreak()); E.append(Paragraph("▶ 월별 계층별 미처리 집계", st_["section"]))
-        mrows=[[
-            r["월"],
-            r["구분"],
-            r["부문"],
-            r["총괄"],
-            r["부서"],
-            f"{int(r['FA']):,}",
-            f"{int(r['비교']):,}",
-            f"{int(r['완판']):,}",
-            f"{int(r['총미스캔']):,}",
-            f"{int(r['대상건']):,}",
-            f"{r['미처리율']:.1f}%"
-        ] for _,r in monthly.iterrows()]
-        msub=[i+1 for i,(_,r) in enumerate(monthly.iterrows()) if r["구분"] in ("부문계","총괄계","부서계")]
-        E.append(_tbl([["월","구분","부문","총괄","부서","FA","비교","완판","총미스캔","대상건","미처리율"]]+mrows,[39,39,52,52,72,29,29,29,39,36,39],fn,sub_rows=msub))
+        elements.append(PageBreak())
+        elements.append(Paragraph("\uc6d4\ubcc4 \uacc4\uce35 \uc694\uc57d", st_["section"]))
+        hdr = [["\uc6d4", "\uad6c\ubd84", "\ubd80\ubb38", "\ucd1d\uad04", "\ubd80\uc11c", "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4", "\ucd1d\ubbf8\uc2a4\uce94", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]]
+        rows = []
+        sub_rows = []
+        for i, (_, r) in enumerate(monthly.iterrows(), 1):
+            rows.append([
+                r["\uc6d4"], r["\uad6c\ubd84"], r["\ubd80\ubb38"], r["\ucd1d\uad04"], r["\ubd80\uc11c"],
+                f"{int(r['FA']):,}", f"{int(r['\ube44\uad50']):,}", f"{int(r['\uc644\ud310']):,}", f"{int(r['\ucd1d\ubbf8\uc2a4\uce94']):,}",
+                f"{int(r['\ub300\uc0c1\uac74']):,}", f"{int(r.get('\uc2a4\uce94\uac74', 0)):,}",
+                f"{float(r['\ubbf8\ucc98\ub9ac\uc728']):.1f}%", f"{float(r.get('\uc2a4\uce94\uc728', 0.0)):.1f}%",
+            ])
+            if r["\uad6c\ubd84"] in ("\ubd80\ubb38\uacc4", "\ucd1d\uad04\uacc4", "\ubd80\uc11c\uacc4"):
+                sub_rows.append(i)
+        elements.append(_tbl(hdr + rows, [34, 34, 42, 42, 42, 34, 34, 34, 36, 34, 34, 34, 34], fn, sub_rows=sub_rows))
+        elements.append(Spacer(1, 8))
+
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
-        E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 집계", st_["section"]))
-        hdr = [pivot.columns.tolist()]
-        values = []
+        elements.append(PageBreak())
+        elements.append(Paragraph("\uc6d4\ubcc4 \ud53c\ubc97 \uc694\uc57d", st_["section"]))
+        headers = pivot.columns.tolist()
+        rows = []
         for _, pr in pivot.iterrows():
-            values.append([f"{int(v):,}" if isinstance(v,(int,float)) and not pd.isna(v) else str(v) for v in pr.tolist()])
-        col_count = len(pivot.columns)
-        fixed = [24, 24, 30, 40]
-        month_cols = max(1, col_count - 4)
+            row = []
+            for col, value in zip(headers, pr.tolist()):
+                if isinstance(value, (int, float)) and not pd.isna(value):
+                    if "\uc728" in str(col):
+                        row.append(f"{float(value):.1f}%")
+                    else:
+                        row.append(f"{int(value):,}")
+                else:
+                    row.append(str(value))
+            rows.append(row)
+        fixed = [24, 24, 28, 32]
+        month_cols = max(1, len(headers) - 4)
         remaining = max(12, int((542 - sum(fixed)) / month_cols))
-        cw = fixed + [remaining] * month_cols
-        E.append(_tbl(hdr + values, cw, fn))
-    doc.build(E); buf.seek(0); return buf
+        widths = fixed + [remaining] * month_cols
+        elements.append(_tbl([headers] + rows, widths, fn))
 
-# ==========================================
-# 9. 전체 페이지 PDF
+    doc.build(elements)
+    buf.seek(0)
+    return buf
+
 
 def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="group", dash_top_n=15, map_type="treemap"):
     fn = register_korean_font()
@@ -577,21 +666,26 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm, leftMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    period_str = ", ".join(months) if months else "\uc804\uccb4"
-    elements = [
-        Paragraph("\uc804\uccb4 \ud398\uc774\uc9c0 \uc694\uc57d \ub9ac\ud3ec\ud2b8", st_["title"]),
-        Paragraph(f"\uae30\uac04: {period_str} | \ubc1c\uae09\uc77c\uc790: {today}", st_["date"]),
-        HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
-        Spacer(1, 8),
-    ]
-
     month_col = "\uc6d4_\ud53c\ub9ac\uc5b4\ub4dc"
     bi_miss_col = "\ube44\uad50_miss"
     cs_miss_col = "\uc644\ud310_miss"
     miss_col = "\ubbf8\uc2a4\uce94"
     target_col = "\ub300\uc0c1\uac74"
     scan_col = "\uc2a4\uce94\uac74"
+    org_label = "\uc870\uc9c1"
+    total_label = "\ucd1d \ubbf8\uc2a4\uce94"
+    fa_label = "FA\uace0\uc9c0"
+    bi_label = "\ube44\uad50\uc124\uba85"
+    cs_label = "\uc644\uc804\ud310\ub9e4"
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    period_str = ", ".join(months) if months else "\uc804\uccb4"
+    elements = [
+        Paragraph("\uc804\uccb4 \ud398\uc774\uc9c0 \ub9ac\ud3ec\ud2b8", st_["title"]),
+        Paragraph(f"\uae30\uac04: {period_str} | \uc0dd\uc131\uc77c: {today}", st_["date"]),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor(HDR_CLR)),
+        Spacer(1, 8),
+    ]
 
     df_sel = df[df[month_col].isin(months)].copy() if months else df.copy()
     fa_t = int(df_sel["FA_miss"].sum())
@@ -603,16 +697,21 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     miss_rate = round(miss_total / target_total * 100, 1) if target_total else 0.0
     scan_rate = round(scan_total / target_total * 100, 1) if target_total else 0.0
 
-    elements.append(Paragraph("\uc8fc\uc694 KPI", st_["section"]))
+    elements.append(Paragraph("\ud575\uc2ec KPI", st_["section"]))
     summary = [
-        ["\ucd1d \uacc4\uc57d\uac74\uc218", f"{len(df_sel):,}"],
-        ["\ucd1d \ub300\uc0c1\uc11c\ub958\uc218", f"{target_total:,}"],
-        ["\ucd1d \ubbf8\ucc98\ub9ac\uac74\uc218", f"{miss_total:,}"],
+        ["\uc870\ud68c \ub370\uc774\ud130", f"{len(df_sel):,}"],
+        ["\ucd1d \ub300\uc0c1\uac74", f"{target_total:,}"],
+        ["\ucd1d \uc2a4\uce94\uac74", f"{scan_total:,}"],
+        ["\ucd1d \ubbf8\uc2a4\uce94", f"{miss_total:,}"],
         ["\ubbf8\ucc98\ub9ac\uc728 / \uc2a4\uce94\uc728", f"{miss_rate:.1f}% / {scan_rate:.1f}%"],
-        ["FA / \ube44\uad50 / \uc644\ud310", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"],
+        ["FA\uace0\uc9c0 / \ube44\uad50\uc124\uba85 / \uc644\uc804\ud310\ub9e4", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"],
     ]
-    elements.append(_tbl(summary, [100, 160], fn, header_rows=0, align="LEFT"))
+    elements.append(_tbl(summary, [110, 180], fn, header_rows=0, align="LEFT"))
     elements.append(Spacer(1, 8))
+
+    dash_doc_types = dash_doc_types or [total_label]
+    dash_chart_mode = "group" if dash_chart_mode in ("group", "\uadf8\ub8f9\ud615") else "stack"
+    map_type_norm = "pie" if map_type in ("pie", "\ud30c\uc774 \ucc28\ud2b8") else "treemap"
 
     agg = df_sel.groupby(agg_group).agg(
         fa_miss_sum=("FA_miss", "sum"),
@@ -622,66 +721,153 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
         scan_sum=(scan_col, "sum"),
     ).reset_index()
     agg["total_miss"] = agg[["fa_miss_sum", "bi_miss_sum", "cs_miss_sum"]].sum(axis=1)
-    agg["miss_rate"] = (agg["total_miss"] / agg["target_sum"] * 100).round(1)
-    agg["scan_rate"] = (agg["scan_sum"] / agg["target_sum"] * 100).round(1)
-    agg = agg.rename(columns={agg_group: "\uc870\uc9c1"}).sort_values("total_miss", ascending=False).head(dash_top_n)
+    agg["miss_rate"] = np.where(agg["target_sum"] > 0, (agg["total_miss"] / agg["target_sum"] * 100).round(1), 0.0)
+    agg["scan_rate"] = np.where(agg["target_sum"] > 0, (agg["scan_sum"] / agg["target_sum"] * 100).round(1), 0.0)
+    agg = agg.rename(columns={agg_group: org_label}).sort_values("total_miss", ascending=False).head(dash_top_n)
 
     if not agg.empty:
-        headers = [["\uc870\uc9c1", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ucd1d_\ubbf8\uc2a4\uce94", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728", "FA\uace0\uc9c0", "\ube44\uad50\uc124\uba85", "\uc644\uc804\ud310\ub9e4"]]
+        elements.append(Paragraph(f"\ub300\uc2dc\ubcf4\ub4dc \uc694\uc57d ({agg_group})", st_["section"]))
+        hdr = [[org_label, "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", total_label, "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728", fa_label, bi_label, cs_label]]
         rows = [[
-            r["\uc870\uc9c1"],
-            f"{int(r['target_sum']):,}",
-            f"{int(r['scan_sum']):,}",
-            f"{int(r['total_miss']):,}",
-            f"{r['miss_rate']:.1f}%",
-            f"{r['scan_rate']:.1f}%",
-            f"{int(r['fa_miss_sum']):,}",
-            f"{int(r['bi_miss_sum']):,}",
-            f"{int(r['cs_miss_sum']):,}",
+            r[org_label], f"{int(r['target_sum']):,}", f"{int(r['scan_sum']):,}", f"{int(r['total_miss']):,}",
+            f"{float(r['miss_rate']):.1f}%", f"{float(r['scan_rate']):.1f}%", f"{int(r['fa_miss_sum']):,}", f"{int(r['bi_miss_sum']):,}", f"{int(r['cs_miss_sum']):,}"
         ] for _, r in agg.iterrows()]
-        elements.append(Paragraph(f"\ud604\ud669 \ub300\uc2dc\ubcf4\ub4dc \uc694\uc57d ({agg_group})", st_["section"]))
-        elements.append(_tbl(headers + rows, [84, 48, 48, 52, 45, 45, 42, 42, 42], fn))
-        elements.append(Spacer(1, 8))
+        elements.append(_tbl(hdr + rows, [84, 48, 48, 56, 46, 46, 42, 42, 42], fn))
+        elements.append(Spacer(1, 6))
+
+        try:
+            metric_map = {
+                total_label: "total_miss",
+                fa_label: "fa_miss_sum",
+                bi_label: "bi_miss_sum",
+                cs_label: "cs_miss_sum",
+            }
+            if len(dash_doc_types) == 1:
+                metric_key = metric_map.get(dash_doc_types[0], "total_miss")
+                color_scale = "Reds" if metric_key == "total_miss" else "Blues"
+                fig_dash = px.bar(
+                    agg,
+                    x=org_label,
+                    y=metric_key,
+                    title=f"{dash_doc_types[0]} TOP {dash_top_n}",
+                    text=metric_key,
+                    color=metric_key,
+                    color_continuous_scale=color_scale,
+                )
+                fig_dash.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+            else:
+                metric_cols = [metric_map.get(doc_type, "total_miss") for doc_type in dash_doc_types]
+                chart_df = agg[[org_label] + metric_cols].copy()
+                chart_df.columns = [org_label] + dash_doc_types
+                chart_df = chart_df.melt(org_label, var_name="\uc11c\ub958", value_name="\uac74\uc218")
+                fig_dash = px.bar(
+                    chart_df,
+                    x=org_label,
+                    y="\uac74\uc218",
+                    color="\uc11c\ub958",
+                    barmode=dash_chart_mode,
+                    title=f"\uc11c\ub958\ubcc4 \ubbf8\uc2a4\uce94 TOP {dash_top_n}",
+                    text="\uac74\uc218",
+                )
+                fig_dash.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+            fig_dash.update_layout(xaxis_tickangle=-35, height=340, margin=dict(l=20, r=20, t=60, b=20))
+            _append_pdf_figure(elements, fig_dash, st_, max_width=1000, height=340)
+        except Exception as err:
+            elements.append(Paragraph(f"\ub300\uc2dc\ubcf4\ub4dc \ucc28\ud2b8 \uc0dd\uc131 \uc624\ub958: {err}", st_["notice"]))
+            elements.append(Spacer(1, 6))
+
+        try:
+            trend_fig = go.Figure()
+            trend_fig.add_trace(
+                go.Scatter(
+                    x=agg[org_label],
+                    y=agg["miss_rate"],
+                    mode="lines+markers+text",
+                    text=[f"{v:.1f}%" for v in agg["miss_rate"]],
+                    textposition="top center",
+                    line=dict(shape="spline", color="#C0392B", width=3),
+                    marker=dict(size=7),
+                    name="\ubbf8\ucc98\ub9ac\uc728",
+                )
+            )
+            trend_fig.add_trace(
+                go.Scatter(
+                    x=agg[org_label],
+                    y=agg["scan_rate"],
+                    mode="lines+markers+text",
+                    text=[f"{v:.1f}%" for v in agg["scan_rate"]],
+                    textposition="bottom center",
+                    line=dict(shape="spline", color="#1F618D", width=3),
+                    marker=dict(size=7),
+                    name="\uc2a4\uce94\uc728",
+                )
+            )
+            trend_fig.update_layout(title=f"\ubbf8\ucc98\ub9ac\uc728 / \uc2a4\uce94\uc728 TOP {dash_top_n}", xaxis_tickangle=-35, height=320, margin=dict(l=20, r=20, t=60, b=20))
+            _append_pdf_figure(elements, trend_fig, st_, max_width=1000, height=320)
+        except Exception as err:
+            elements.append(Paragraph(f"\ucd94\uc774 \ucc28\ud2b8 \uc0dd\uc131 \uc624\ub958: {err}", st_["notice"]))
+            elements.append(Spacer(1, 6))
 
     map_agg = df_sel.groupby(map_level).agg(
         miss_sum=(miss_col, "sum"),
         target_sum=(target_col, "sum"),
         scan_sum=(scan_col, "sum"),
     ).reset_index()
-    map_agg["miss_rate"] = (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1)
-    map_agg["scan_rate"] = (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1)
+    map_agg["miss_rate"] = np.where(map_agg["target_sum"] > 0, (map_agg["miss_sum"] / map_agg["target_sum"] * 100).round(1), 0.0)
+    map_agg["scan_rate"] = np.where(map_agg["target_sum"] > 0, (map_agg["scan_sum"] / map_agg["target_sum"] * 100).round(1), 0.0)
     map_agg = map_agg.sort_values("miss_sum", ascending=False).head(dash_top_n)
 
     if not map_agg.empty:
-        headers = [["\uc870\uc9c1", "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", "\ubbf8\uc2a4\uce94", "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]]
+        hdr = [[org_label, "\ub300\uc0c1\uac74", "\uc2a4\uce94\uac74", total_label, "\ubbf8\ucc98\ub9ac\uc728", "\uc2a4\uce94\uc728"]]
         rows = [[
-            r[map_level],
-            f"{int(r['target_sum']):,}",
-            f"{int(r['scan_sum']):,}",
-            f"{int(r['miss_sum']):,}",
-            f"{r['miss_rate']:.1f}%",
-            f"{r['scan_rate']:.1f}%",
+            r[map_level], f"{int(r['target_sum']):,}", f"{int(r['scan_sum']):,}", f"{int(r['miss_sum']):,}", f"{float(r['miss_rate']):.1f}%", f"{float(r['scan_rate']):.1f}%"
         ] for _, r in map_agg.iterrows()]
-        elements.append(Paragraph(f"{map_level}\ubcc4 \ubbf8\uc2a4\uce94 \ubd84\ud3ec", st_["section"]))
-        elements.append(_tbl(headers + rows, [100, 55, 55, 55, 55, 55], fn))
-        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(f"{map_level}\ubcc4 \uc9d1\uacc4 \uc694\uc57d", st_["section"]))
+        elements.append(_tbl(hdr + rows, [100, 55, 55, 58, 55, 55], fn))
+        elements.append(Spacer(1, 6))
+
+        try:
+            if map_type_norm == "pie":
+                fig_map = px.pie(
+                    map_agg,
+                    values="miss_sum",
+                    names=map_level,
+                    title=f"{map_level}\ubcc4 {total_label} \ube44\uc911",
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.qualitative.Set3,
+                )
+                fig_map.update_traces(textposition="inside", textinfo="percent+label")
+            else:
+                fig_map = px.treemap(
+                    map_agg,
+                    path=[map_level],
+                    values="miss_sum",
+                    color="miss_rate",
+                    title=f"{map_level}\ubcc4 {total_label} \ud2b8\ub9ac\ub9f5",
+                    color_continuous_scale="RdYlGn_r",
+                )
+            fig_map.update_layout(margin=dict(l=20, r=20, t=35, b=20), width=1000, height=340)
+            _append_pdf_figure(elements, fig_map, st_, max_width=1000, height=340)
+        except Exception as err:
+            elements.append(Paragraph(f"\uc9d1\uacc4 \ucc28\ud2b8 \uc0dd\uc131 \uc624\ub958: {err}", st_["notice"]))
+            elements.append(Spacer(1, 6))
 
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
         elements.append(PageBreak())
-        elements.append(Paragraph("\uc6d4\ubcc4 \ud53c\ubc97\ud615 \uacc4\uce35 \ub9ac\ud3ec\ud2b8", st_["section"]))
+        elements.append(Paragraph("\uc6d4\ubcc4 \ud53c\ubc97 \uc694\uc57d", st_["section"]))
         headers = pivot.columns.tolist()
         rows = []
         for _, pr in pivot.iterrows():
             row = []
-            for col, val in zip(headers, pr.tolist()):
-                if isinstance(val, (int, float)) and not pd.isna(val):
-                    if col.endswith("_\ubbf8\ucc98\ub9ac\uc728") or col.endswith("_\uc2a4\uce94\uc728"):
-                        row.append(f"{float(val):.1f}%")
+            for col, value in zip(headers, pr.tolist()):
+                if isinstance(value, (int, float)) and not pd.isna(value):
+                    if "\uc728" in str(col):
+                        row.append(f"{float(value):.1f}%")
                     else:
-                        row.append(f"{int(val):,}")
+                        row.append(f"{int(value):,}")
                 else:
-                    row.append(str(val))
+                    row.append(str(value))
             rows.append(row)
         fixed = [30, 30, 35, 45]
         month_cols = max(1, len(headers) - 4)
@@ -692,6 +878,7 @@ def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, d
     doc.build(elements)
     buf.seek(0)
     return buf
+
 
 def ledger_pdf(families_by_dept, period_text, df_src):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
