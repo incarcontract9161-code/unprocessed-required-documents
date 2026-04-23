@@ -58,7 +58,7 @@ PROCESS_FLOW = [
 ]
 
 # ==========================================
-# 2. 데이터 로딩 (0나눗셈 안전 처리)
+# 2. 데이터 로딩 (NAType 오류 해결 적용)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -104,9 +104,10 @@ def load_data():
         df["전체스캔건"] = df[["FA_전체스캔", "비교_전체스캔", "완판_전체스캔"]].sum(axis=1).astype(int)
         df["M스캔건"] = df[["FA_M스캔", "비교_M스캔", "완판_M스캔"]].sum(axis=1).astype(int)
 
-        # ✅ 안전 나눗셈: 0을 NaN으로 치환 후 연산
-        df["전체스캔율"] = (df["전체스캔건"] / df["대상건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
-        df["M스캔율"] = (df["M스캔건"] / df["전체스캔건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
+        # ✅ NAType round 오류 해결: pd.NA → float('nan') 변경
+        # float('nan')은 round() 및 fillna()와 100% 호환됩니다.
+        df["전체스캔율"] = (df["전체스캔건"] / df["대상건"].replace(0, float('nan')) * 100).round(1).fillna(0.0)
+        df["M스캔율"] = (df["M스캔건"] / df["전체스캔건"].replace(0, float('nan')) * 100).round(1).fillna(0.0)
 
         return df
     except Exception as e:
@@ -119,7 +120,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼 (KeyError 방지 명시적 컬럼)
+# 3. 집계 헬퍼
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_col="영업가족"):
@@ -133,11 +134,11 @@ def build_org_stats(df, months=None, group_col="영업가족"):
     ).reset_index()
     agg = agg.rename(columns={group_col: "조직"})
     
-    agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
-    agg["M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
+    # ✅ 집계 함수 내 동일 적용
+    agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, float('nan')) * 100).round(1).fillna(0.0)
+    agg["M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, float('nan')) * 100).round(1).fillna(0.0)
     agg["순위"] = range(1, len(agg) + 1)
     
-    # ✅ M스캔건 기준 내림차순 정렬 (KeyError 원인 제거)
     return agg.sort_values("M스캔건", ascending=False).reset_index(drop=True)
 
 # ==========================================
@@ -179,7 +180,7 @@ def dashboard_page():
     df_sel = df[df[month_col].isin(sel_months)].copy()
     if df_sel.empty: st.info("선택한 기간에 데이터가 없습니다."); return
 
-    # 🟦 KPI 카드 (계층 구조 명확화)
+    # 🟦 KPI 카드
     total_docs = int(df_sel["대상건"].sum())
     total_scanned = int(df_sel["전체스캔건"].sum())
     m_scanned = int(df_sel["M스캔건"].sum())
@@ -197,7 +198,7 @@ def dashboard_page():
     tab_dash, tab_map, tab_guide, tab_manual = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"])
 
     # ==========================================
-    # 탭 1: 현황 대시보드 (반응형 지표 선택)
+    # 탭 1: 현황 대시보드
     # ==========================================
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
@@ -208,7 +209,6 @@ def dashboard_page():
         if search_text: agg = agg[agg["조직"].astype(str).str.contains(search_text, case=False, na=False)]
         if agg.empty: st.info("조건에 맞는 데이터가 없습니다."); return
 
-        # ✅ 지표 선택 토글
         rate_option = st.radio(
             "📊 표시할 지표 선택",
             ["전체스캔율 (대상건 대비)", "M스캔율 (전체스캔건 대비)"],
@@ -216,7 +216,6 @@ def dashboard_page():
             key="rate_option"
         )
         
-        # 선택된 지표에 따른 표시 컬럼 매핑
         is_total_rate = "전체스캔율" in rate_option
         rate_col = "전체스캔율" if is_total_rate else "M스캔율"
         rate_label = "전체스캔율" if is_total_rate else "M스캔율"
@@ -373,7 +372,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v9.0 | M스캔 전용 집계 | 반응형 지표 선택 | 단일 막대차트")
+            st.caption("v9.1 | M스캔 전용 집계 | NAType round 오류 해결 완료")
         dashboard_page()
 
 if __name__ == "__main__":
