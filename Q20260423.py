@@ -61,7 +61,7 @@ PROCESS_FLOW = [
 ]
 
 # ==========================================
-# 2. 데이터 로딩 (M스캔 전용 집계 로직)
+# 2. 데이터 로딩 (Series 비교 오류 해결 적용)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -78,17 +78,14 @@ def load_data():
         for col in ["FA고지", "비교설명", "완전판매"]:
             df[f"{col}_c"] = df[col].fillna(" ").astype(str).str.strip()
 
-        # 전체 스캔 판정 (스캔, M스캔, 보험사스캔)
         def is_total_scanned(val):
             if pd.isna(val) or val == " ": return False
             return str(val).strip() in ["스캔", "M스캔", "보험사스캔"]
 
-        # M스캔 전용 판정
         def is_m_scanned(val):
             if pd.isna(val) or val == " ": return False
             return str(val).strip() == "M스캔"
 
-        # 완판 대상 판정
         def is_cs_target(val):
             if pd.isna(val) or val == " ": return False
             return str(val).strip() in ["스캔", "M스캔", "미스캔"]
@@ -110,10 +107,9 @@ def load_data():
         df["전체스캔건"] = df[["FA_전체스캔", "비교_전체스캔", "완판_전체스캔"]].sum(axis=1).astype(int)
         df["M스캔건"] = df[["FA_M스캔", "비교_M스캔", "완판_M스캔"]].sum(axis=1).astype(int)
 
-        # 비율 계산 (0으로 나누기 예외 처리)
-        safe_div = lambda num, den: round(num / den * 100, 1) if den > 0 else 0.0
-        df["전체스캔율"] = safe_div(df["전체스캔건"], df["대상건"])
-        df["M스캔율"] = safe_div(df["M스캔건"], df["대상건"])
+        # ✅ Series boolean 오류 해결: 벡터화 연산으로 나눗셈 처리
+        df["전체스캔율"] = (df["전체스캔건"] / df["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
+        df["M스캔율"] = (df["M스캔건"] / df["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
 
         return df
     except Exception as e:
@@ -126,7 +122,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼
+# 3. 집계 헬퍼 (동일하게 벡터화 적용)
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_col="영업가족"):
@@ -140,9 +136,9 @@ def build_org_stats(df, months=None, group_col="영업가족"):
     ).reset_index()
     agg = agg.rename(columns={group_col: "조직"})
     
-    safe_div = lambda num, den: round(num / den * 100, 1) if den > 0 else 0.0
-    agg["전체스캔율"] = safe_div(agg["전체스캔건"], agg["대상건"])
-    agg["M스캔율"] = safe_div(agg["M스캔건"], agg["대상건"])
+    # ✅ Series boolean 오류 해결
+    agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
+    agg["M스캔율"] = (agg["M스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
     
     agg["순위"] = range(1, len(agg) + 1)
     return agg.sort_values("M스캔건", ascending=False).reset_index(drop=True)
@@ -201,7 +197,6 @@ def dashboard_page():
     st.caption(f"📊 전체 대상건 {total_docs:,}건 대비 → 전체 스캔 {total_scanned:,}건 / M스캔 {m_scanned:,}건 | 전체스캔율 {total_rate:.1f}% 대비 M스캔율 {m_rate:.1f}%")
     st.divider()
 
-    # 탭 구성
     tab_dash, tab_map, tab_guide = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스"])
 
     # ==========================================
@@ -223,7 +218,6 @@ def dashboard_page():
         top_n = st.slider("차트 표시 개수", 5, 30, 15, key="dash_top_n")
         top = agg.head(top_n)
 
-        # ✅ NameError 해결: 컬럼 선언을 with 블록 외부 최상단에서 명확히 처리
         c1, c2 = st.columns(2)
         with c1:
             fig = go.Figure()
@@ -239,7 +233,7 @@ def dashboard_page():
             st.plotly_chart(fig2, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황 (기존 미처리맵 대체)
+    # 탭 2: M스캔 활용 현황
     # ==========================================
     with tab_map:
         st.subheader("조직별 M스캔 활용도 분포")
@@ -268,19 +262,17 @@ def dashboard_page():
                 st.plotly_chart(fig_bar, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 가이드 & 프로세스 (PDF 기반)
+    # 탭 3: 가이드 & 프로세스
     # ==========================================
     with tab_guide:
         g1, g2 = st.columns(2)
         with g1:
             st.subheader(MOBILE_GUIDE["title"])
             for reason in MOBILE_GUIDE["reasons"]: st.markdown(f"🔹 {reason}")
-            
             st.divider()
             st.subheader("📝 책임판매 필수 서류 4종")
             st.dataframe(pd.DataFrame(GUIDANCE_DOCS[1:], columns=GUIDANCE_DOCS[0]).set_index("No."), 
                          use_container_width=True, hide_index=True)
-            
             st.divider()
             st.subheader("✅ 반드시 해야 할 일(Do)")
             for do_item in MOBILE_GUIDE["do_list"]: st.markdown(do_item)
@@ -290,7 +282,6 @@ def dashboard_page():
             for step in PROCESS_FLOW:
                 with st.expander(f"🔹 Step {step['step']}: {step['title']}"):
                     st.markdown(step["desc"])
-            
             st.divider()
             st.subheader("❓ 자주 묻는 질문(FAQ)")
             for q, a in MOBILE_GUIDE["faq"]: st.markdown(f"**Q. {q}**\n\nA. {a}")
@@ -322,7 +313,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v7.0 | M스캔 전용 집계 | © 2026")
+            st.caption("v7.1 | M스캔 전용 집계 | Series 오류 해결 완료")
         dashboard_page()
 
 if __name__ == "__main__":
