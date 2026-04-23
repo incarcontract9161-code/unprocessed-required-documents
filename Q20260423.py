@@ -19,7 +19,10 @@ st.set_page_config(page_title="M스캔 전용 서류 처리 대시보드", layou
 # ==========================================
 EXCEL_FILE = "insurance_data.xlsx"
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
-MANUAL_FILE = "모바일동의_매뉴얼.pdf"  # 매뉴얼 파일명
+MANUAL_FILES = [
+    "모바일동의_독려_안내.pdf",
+    "모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf"
+]
 
 # 📄 모바일동의 독려 안내 (PDF 1)
 GUIDANCE_DOCS = [
@@ -62,7 +65,7 @@ PROCESS_FLOW = [
 ]
 
 # ==========================================
-# 2. 데이터 로딩
+# 2. 데이터 로딩 (벡터화 연산으로 Series 오류 차단)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -108,12 +111,6 @@ def load_data():
         df["전체스캔건"] = df[["FA_전체스캔", "비교_전체스캔", "완판_전체스캔"]].sum(axis=1).astype(int)
         df["M스캔건"] = df[["FA_M스캔", "비교_M스캔", "완판_M스캔"]].sum(axis=1).astype(int)
 
-        # 비율 계산 (0으로 나누기 예외 처리)
-        df["전체스캔율"] = (df["전체스캔건"] / df["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-        df["M스캔율"] = (df["M스캔건"] / df["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-        # 전체스캔건 대비 M스캔율
-        df["스캔대비_M스캔율"] = (df["M스캔건"] / df["전체스캔건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-
         return df
     except Exception as e:
         st.error(f"❌ 엑셀 파일 읽기 오류: {e}")
@@ -125,7 +122,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼
+# 3. 집계 헬퍼 (컬럼명 통일 및 정렬 기준 명확화)
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_col="영업가족"):
@@ -139,14 +136,13 @@ def build_org_stats(df, months=None, group_col="영업가족"):
     ).reset_index()
     agg = agg.rename(columns={group_col: "조직"})
     
-    # 전체 대상건 대비 M스캔율
-    agg["대상대비_M스캔율"] = (agg["M스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-    # 전체 스캔건 대비 M스캔율
-    agg["스캔대비_M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-    # 전체 스캔율
+    # ✅ 벡터화 비율 계산 (0나눗셈 안전 처리)
     agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
+    agg["대상대비_M스캔율"] = (agg["M스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
+    agg["스캔대비_M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
     
     agg["순위"] = range(1, len(agg) + 1)
+    # ✅ KeyError 해결: 존재하는 컬럼("M스캔건") 기준으로 정렬
     return agg.sort_values("M스캔건", ascending=False).reset_index(drop=True)
 
 # ==========================================
@@ -193,21 +189,21 @@ def dashboard_page():
     total_scanned = int(df_sel["전체스캔건"].sum())
     m_scanned = int(df_sel["M스캔건"].sum())
     total_rate = round(total_scanned / total_docs * 100, 1) if total_docs else 0.0
-    m_rate = round(m_scanned / total_docs * 100, 1) if total_docs else 0.0
-    scan_to_m_rate = round(m_scanned / total_scanned * 100, 1) if total_scanned else 0.0
+    m_rate_obj = round(m_scanned / total_docs * 100, 1) if total_docs else 0.0
+    m_rate_scan = round(m_scanned / total_scanned * 100, 1) if total_scanned else 0.0
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("총 계약건수", f"{len(df_sel):,}건")
     m2.metric("총 대상서류수", f"{total_docs:,}건")
     m3.metric("전체 스캔율", f"{total_rate:.1f}%")
-    m4.metric("M스캔율", f"{m_rate:.1f}%")
-    st.caption(f"📊 전체 대상건 {total_docs:,}건 대비 → 전체 스캔 {total_scanned:,}건 / M스캔 {m_scanned:,}건 | 전체스캔율 {total_rate:.1f}% 대비 M스캔율 {m_rate:.1f}% | 스캔대비 M스캔율: {scan_to_m_rate:.1f}%")
+    m4.metric("M스캔율(스캔대비)", f"{m_rate_scan:.1f}%")
+    st.caption(f"📊 전체 대상건 {total_docs:,}건 대비 전체 스캔 {total_scanned:,}건 / M스캔 {m_scanned:,}건 | 전체스캔율 {total_rate:.1f}% 대비 M스캔율 {m_rate_obj:.1f}%")
     st.divider()
 
     tab_dash, tab_map, tab_guide, tab_manual = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"])
 
     # ==========================================
-    # 탭 1: 현황 대시보드
+    # 탭 1: 현황 대시보드 (라디오 버튼 동기화 완벽 적용)
     # ==========================================
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
@@ -225,9 +221,9 @@ def dashboard_page():
         top_n = st.slider("차트 표시 개수", 5, 30, 15, key="dash_top_n")
         top = agg.head(top_n)
 
-        # ✅ 비율 선택 옵션
+        # ✅ 라디오 버튼 선택 시 차트 즉시 반영
         rate_option = st.radio(
-            "📊 표시할 비율 선택",
+            "📊 비교 기준 선택",
             ["전체 대상건 대비 M스캔율", "전체 스캔건 대비 M스캔율"],
             horizontal=True,
             key="rate_option"
@@ -236,50 +232,37 @@ def dashboard_page():
         c1, c2 = st.columns(2)
         with c1:
             fig = go.Figure()
+            # 베이스라인: 전체 스캔율
+            fig.add_trace(go.Scatter(
+                x=top["조직"], y=top["전체스캔율"], 
+                name="전체 스캔율", mode="lines+markers", 
+                marker=dict(size=8, color="#4A90E2"), 
+                text=[f"{v:.1f}%" for v in top["전체스캔율"]], 
+                textposition="top center"
+            ))
+            # 선택된 M스캔율
             if rate_option == "전체 대상건 대비 M스캔율":
-                # 전체 스캔율 vs 대상대비 M스캔율
-                fig.add_trace(go.Scatter(
-                    x=top["조직"], y=top["전체스캔율"], 
-                    name="전체 스캔율", mode="lines+markers", 
-                    marker=dict(size=8, color="#4A90E2"), 
-                    text=[f"{v:.1f}%" for v in top["전체스캔율"]], 
-                    textposition="top center"
-                ))
-                fig.add_trace(go.Scatter(
-                    x=top["조직"], y=top["대상대비_M스캔율"], 
-                    name="대상대비 M스캔율", mode="lines+markers", 
-                    marker=dict(size=8, color="#FF6B6B"), 
-                    text=[f"{v:.1f}%" for v in top["대상대비_M스캔율"]], 
-                    textposition="bottom center"
-                ))
-                title_text = "전체 스캔율 vs 대상건 대비 M스캔율"
+                y_col, title_name = "대상대비_M스캔율", "대상건 대비 M스캔율"
             else:
-                # 전체 스캔율 vs 스캔대비 M스캔율
-                fig.add_trace(go.Scatter(
-                    x=top["조직"], y=top["전체스캔율"], 
-                    name="전체 스캔율", mode="lines+markers", 
-                    marker=dict(size=8, color="#4A90E2"), 
-                    text=[f"{v:.1f}%" for v in top["전체스캔율"]], 
-                    textposition="top center"
-                ))
-                fig.add_trace(go.Scatter(
-                    x=top["조직"], y=top["스캔대비_M스캔율"], 
-                    name="스캔대비 M스캔율", mode="lines+markers", 
-                    marker=dict(size=8, color="#FF6B6B"), 
-                    text=[f"{v:.1f}%" for v in top["스캔대비_M스캔율"]], 
-                    textposition="bottom center"
-                ))
-                title_text = "전체 스캔율 vs 스캔건 대비 M스캔율"
+                y_col, title_name = "스캔대비_M스캔율", "스캔건 대비 M스캔율"
+                
+            fig.add_trace(go.Scatter(
+                x=top["조직"], y=top[y_col], 
+                name=title_name, mode="lines+markers", 
+                marker=dict(size=8, color="#FF6B6B"), 
+                text=[f"{v:.1f}%" for v in top[y_col]], 
+                textposition="bottom center"
+            ))
             
             fig.update_layout(
-                xaxis_tickangle=-45, height=400, title=title_text, 
+                xaxis_tickangle=-45, height=400, 
+                title=f"전체 스캔율 vs {title_name}", 
                 yaxis_range=[0, 100], yaxis_title="비율(%)",
                 legend=dict(orientation="h", y=1.12)
             )
             st.plotly_chart(fig, use_container_width=True)
 
         with c2:
-            # M스캔 건수 막대 그래프 (참고용)
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
                 x=top["조직"], y=top["M스캔건"], 
@@ -296,7 +279,7 @@ def dashboard_page():
             st.plotly_chart(fig2, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황
+    # 탭 2: M스캔 활용 현황 (KeyError 해결)
     # ==========================================
     with tab_map:
         st.subheader("조직별 M스캔 활용도 분포")
@@ -305,7 +288,8 @@ def dashboard_page():
         with mc2: map_type = st.radio("차트 유형", ["파이 차트", "트리맵", "가로막대"], horizontal=True, key="map_type")
 
         map_agg = build_org_stats(df_sel, sel_months, map_level)
-        map_agg = map_agg[map_agg["M스캔건"] > 0].sort_values("M스캔율", ascending=False)
+        # ✅ KeyError 해결: "M스캔율" 대신 "M스캔건" 또는 "스캔대비_M스캔율" 사용
+        map_agg = map_agg[map_agg["M스캔건"] > 0].sort_values("M스캔건", ascending=False).reset_index(drop=True)
         
         if map_agg.empty:
             st.info("M스캔 활용 데이터가 없습니다.")
@@ -315,11 +299,11 @@ def dashboard_page():
                 fig_pie.update_traces(textposition="inside", textinfo="percent+label")
                 st.plotly_chart(fig_pie, use_container_width=True)
             elif map_type == "트리맵":
-                fig_tree = px.treemap(map_agg, path=["조직"], values="M스캔건", color="대상대비_M스캔율", 
+                fig_tree = px.treemap(map_agg, path=["조직"], values="M스캔건", color="스캔대비_M스캔율", 
                                       title="조직별 M스캔 활용도 (건수/율)", color_continuous_scale="YlOrRd")
                 st.plotly_chart(fig_tree, use_container_width=True)
             else:
-                fig_bar = px.bar(map_agg, y="조직", x="대상대비_M스캔율", orientation="h", color="M스캔건",
+                fig_bar = px.bar(map_agg, y="조직", x="스캔대비_M스캔율", orientation="h", color="M스캔건",
                                  title="M스캔율 상위 조직", text_auto=".1f%", color_continuous_scale="Blues")
                 fig_bar.update_layout(height=500)
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -354,52 +338,27 @@ def dashboard_page():
     # ==========================================
     with tab_manual:
         st.subheader("📚 모바일동의 매뉴얼 다운로드")
-        st.markdown("""
-        ### 다운로드 가능 문서
-        
-        - **모바일동의 독려 안내** : 책임판매 필수서류 4종, 모바일동의 권장 사유, FAQ
-        - **모바일가입확인서 발송 절차** : 장기 계피상이건 발송 절차 (Ver 2.0)
-        """)
-        
+        st.markdown("첨부된 가이드 문서를 PDF로 다운로드할 수 있습니다.")
         st.divider()
         
-        # 매뉴얼 파일이 있는지 확인
-        manual_files = []
-        if os.path.exists(MANUAL_FILE):
-            manual_files.append(MANUAL_FILE)
-        
-        # 추가 매뉴얼 파일들
-        additional_manuals = [
-            "모바일동의_독려_안내.pdf",
-            "모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf"
-        ]
-        
-        for mf in additional_manuals:
+        found = False
+        for mf in MANUAL_FILES:
             if os.path.exists(mf):
-                manual_files.append(mf)
-        
-        if manual_files:
-            st.success(f"✅ {len(manual_files)}개의 매뉴얼 파일을 다운로드할 수 있습니다.")
-            
-            for mf in manual_files:
+                found = True
                 try:
                     with open(mf, "rb") as f:
-                        file_bytes = f.read()
                         st.download_button(
-                            label=f"📥 {mf} 다운로드",
-                            data=file_bytes,
+                            label=f"📥 {mf}",
+                            data=f.read(),
                             file_name=mf,
                             mime="application/pdf",
                             key=f"dl_{mf}",
                             use_container_width=True
                         )
                 except Exception as e:
-                    st.error(f"❌ {mf} 파일 읽기 오류: {e}")
-        else:
-            st.warning("⚠️ 매뉴얼 PDF 파일이 없습니다. 다음 파일들을 준비해주세요:\n- 모바일동의_매뉴얼.pdf\n- 모바일동의_독려_안내.pdf\n- 모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf")
-        
-        st.divider()
-        st.info("💡 매뉴얼 파일은 Streamlit 실행 폴더에 PDF 파일을 놓아주시면 자동으로 인식됩니다.")
+                    st.error(f"❌ {mf} 읽기 오류: {e}")
+        if not found:
+            st.warning("⚠️ 매뉴얼 파일이 현재 폴더에 없습니다. 실행 디렉토리에 PDF 파일을 복사해주세요.")
 
     # ==========================================
     # 다운로드 버튼
@@ -429,7 +388,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v8.0 | M스캔 전용 집계 | 비율 중심 차트 | 매뉴얼 다운로드")
+            st.caption("v8.1 | M스캔 전용 집계 | KeyError 해결 | 비율 선택 동기화 완료")
         dashboard_page()
 
 if __name__ == "__main__":
