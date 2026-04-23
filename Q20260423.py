@@ -4,27 +4,21 @@ import os
 import plotly.express as px
 import plotly.graph_objects as go
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from openpyxl.utils import get_column_letter
 from datetime import datetime
 import io
 
 # ==========================================
-# 0. 페이지 설정 (최상단 필수)
+# 0. 페이지 설정
 # ==========================================
 st.set_page_config(page_title="M스캔 전용 서류 처리 대시보드", layout="wide", page_icon="📊")
 
 # ==========================================
-# 1. 전역 설정 & PDF 내용 통합
+# 1. 전역 설정 & 가이드 내용
 # ==========================================
 EXCEL_FILE = "insurance_data.xlsx"
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
-MANUAL_FILES = [
-    "모바일동의_독려_안내.pdf",
-    "모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf"
-]
+MANUAL_FILES = ["모바일동의_독려_안내.pdf", "모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf"]
 
-# 📄 모바일동의 독려 안내 (PDF 1)
 GUIDANCE_DOCS = [
     ["No.", "서류명", "법적근거", "목적 및 주요내용"],
     ["1", "개인정보동의서", "개인정보보호법 15조\n대리점 표준 내부통제기준 27조", "개인정보 처리 적법 근거, 보유계약 전산 관리 과정에 따른 개인정보 처리로 신계약시 필수 징구"],
@@ -55,7 +49,6 @@ MOBILE_GUIDE = {
     ]
 }
 
-# 🔄 모바일가입확인서 발송 절차 (PDF 2)
 PROCESS_FLOW = [
     {"step": "1", "title": "보험구분 및 계/피동일 설정", "desc": "손보/생보 선택 후 계약자와 피보험자가 동일할 경우 '계/피동일' 체크박스 선택. 체크 시 피보험자 입력칸 자동 생략."},
     {"step": "2", "title": "완전판매확인서 발송 기준 설정", "desc": "필수발송대상: 생보보장성(변액/종신/100만↑), 생보저축성(300만↑), 손보보장/저축성(100만↑). 조건 외 선택적 발송 가능."},
@@ -65,7 +58,7 @@ PROCESS_FLOW = [
 ]
 
 # ==========================================
-# 2. 데이터 로딩 (벡터화 연산으로 Series 오류 차단)
+# 2. 데이터 로딩 (0나눗셈 안전 처리)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -111,6 +104,10 @@ def load_data():
         df["전체스캔건"] = df[["FA_전체스캔", "비교_전체스캔", "완판_전체스캔"]].sum(axis=1).astype(int)
         df["M스캔건"] = df[["FA_M스캔", "비교_M스캔", "완판_M스캔"]].sum(axis=1).astype(int)
 
+        # ✅ 안전 나눗셈: 0을 NaN으로 치환 후 연산
+        df["전체스캔율"] = (df["전체스캔건"] / df["대상건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
+        df["M스캔율"] = (df["M스캔건"] / df["전체스캔건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
+
         return df
     except Exception as e:
         st.error(f"❌ 엑셀 파일 읽기 오류: {e}")
@@ -122,7 +119,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼 (컬럼명 통일 및 정렬 기준 명확화)
+# 3. 집계 헬퍼 (KeyError 방지 명시적 컬럼)
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_col="영업가족"):
@@ -136,13 +133,11 @@ def build_org_stats(df, months=None, group_col="영업가족"):
     ).reset_index()
     agg = agg.rename(columns={group_col: "조직"})
     
-    # ✅ 벡터화 비율 계산 (0나눗셈 안전 처리)
-    agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-    agg["대상대비_M스캔율"] = (agg["M스캔건"] / agg["대상건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-    agg["스캔대비_M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, float("nan")) * 100).round(1).fillna(0.0)
-    
+    agg["전체스캔율"] = (agg["전체스캔건"] / agg["대상건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
+    agg["M스캔율"] = (agg["M스캔건"] / agg["전체스캔건"].replace(0, pd.NA) * 100).round(1).fillna(0.0)
     agg["순위"] = range(1, len(agg) + 1)
-    # ✅ KeyError 해결: 존재하는 컬럼("M스캔건") 기준으로 정렬
+    
+    # ✅ M스캔건 기준 내림차순 정렬 (KeyError 원인 제거)
     return agg.sort_values("M스캔건", ascending=False).reset_index(drop=True)
 
 # ==========================================
@@ -184,26 +179,25 @@ def dashboard_page():
     df_sel = df[df[month_col].isin(sel_months)].copy()
     if df_sel.empty: st.info("선택한 기간에 데이터가 없습니다."); return
 
-    # 🟦 KPI 카드
+    # 🟦 KPI 카드 (계층 구조 명확화)
     total_docs = int(df_sel["대상건"].sum())
     total_scanned = int(df_sel["전체스캔건"].sum())
     m_scanned = int(df_sel["M스캔건"].sum())
     total_rate = round(total_scanned / total_docs * 100, 1) if total_docs else 0.0
-    m_rate_obj = round(m_scanned / total_docs * 100, 1) if total_docs else 0.0
-    m_rate_scan = round(m_scanned / total_scanned * 100, 1) if total_scanned else 0.0
+    m_rate = round(m_scanned / total_scanned * 100, 1) if total_scanned else 0.0
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("총 계약건수", f"{len(df_sel):,}건")
-    m2.metric("총 대상서류수", f"{total_docs:,}건")
-    m3.metric("전체 스캔율", f"{total_rate:.1f}%")
-    m4.metric("M스캔율(스캔대비)", f"{m_rate_scan:.1f}%")
-    st.caption(f"📊 전체 대상건 {total_docs:,}건 대비 전체 스캔 {total_scanned:,}건 / M스캔 {m_scanned:,}건 | 전체스캔율 {total_rate:.1f}% 대비 M스캔율 {m_rate_obj:.1f}%")
+    m1.metric("총 대상건", f"{total_docs:,}건", help="필수 징구 대상 서류 총합")
+    m2.metric("전체 스캔건", f"{total_scanned:,}건", delta=f"{total_rate:.1f}% (완료율)", delta_color="normal")
+    m3.metric("M스캔건", f"{m_scanned:,}건", delta=f"{m_rate:.1f}% (M스캔 비중)", delta_color="inverse" if m_rate < 50 else "normal")
+    m4.metric("미처리 건", f"{total_docs - total_scanned:,}건")
+    
     st.divider()
 
     tab_dash, tab_map, tab_guide, tab_manual = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"])
 
     # ==========================================
-    # 탭 1: 현황 대시보드 (라디오 버튼 동기화 완벽 적용)
+    # 탭 1: 현황 대시보드 (반응형 지표 선택)
     # ==========================================
     with tab_dash:
         cs1, cs2 = st.columns([2, 1])
@@ -214,49 +208,44 @@ def dashboard_page():
         if search_text: agg = agg[agg["조직"].astype(str).str.contains(search_text, case=False, na=False)]
         if agg.empty: st.info("조건에 맞는 데이터가 없습니다."); return
 
-        st.dataframe(agg[["순위", "조직", "대상건", "전체스캔건", "M스캔건", "전체스캔율", "대상대비_M스캔율", "스캔대비_M스캔율"]]
-                     .style.format({"전체스캔율":"{:.1f}%", "대상대비_M스캔율":"{:.1f}%", "스캔대비_M스캔율":"{:.1f}%"}), 
-                     use_container_width=True, hide_index=True)
+        # ✅ 지표 선택 토글
+        rate_option = st.radio(
+            "📊 표시할 지표 선택",
+            ["전체스캔율 (대상건 대비)", "M스캔율 (전체스캔건 대비)"],
+            horizontal=True,
+            key="rate_option"
+        )
+        
+        # 선택된 지표에 따른 표시 컬럼 매핑
+        is_total_rate = "전체스캔율" in rate_option
+        rate_col = "전체스캔율" if is_total_rate else "M스캔율"
+        rate_label = "전체스캔율" if is_total_rate else "M스캔율"
+        
+        st.dataframe(
+            agg[["순위", "조직", "대상건", "전체스캔건", "M스캔건", "전체스캔율", "M스캔율"]]
+            .style.format({"전체스캔율":"{:.1f}%", "M스캔율":"{:.1f}%"})
+            .highlight_max(subset=[rate_col], color="#e6f0fa"),
+            use_container_width=True, hide_index=True
+        )
         
         top_n = st.slider("차트 표시 개수", 5, 30, 15, key="dash_top_n")
         top = agg.head(top_n)
 
-        # ✅ 라디오 버튼 선택 시 차트 즉시 반영
-        rate_option = st.radio(
-            "📊 비교 기준 선택",
-            ["전체 대상건 대비 M스캔율", "전체 스캔건 대비 M스캔율"],
-            horizontal=True,
-            key="rate_option"
-        )
-
         c1, c2 = st.columns(2)
         with c1:
             fig = go.Figure()
-            # 베이스라인: 전체 스캔율
             fig.add_trace(go.Scatter(
-                x=top["조직"], y=top["전체스캔율"], 
-                name="전체 스캔율", mode="lines+markers", 
-                marker=dict(size=8, color="#4A90E2"), 
-                text=[f"{v:.1f}%" for v in top["전체스캔율"]], 
+                x=top["조직"], y=top[rate_col],
+                mode="lines+markers",
+                line=dict(width=3, color="#2ECC71" if is_total_rate else "#3498DB"),
+                marker=dict(size=8),
+                name=rate_label,
+                text=[f"{v:.1f}%" for v in top[rate_col]],
                 textposition="top center"
             ))
-            # 선택된 M스캔율
-            if rate_option == "전체 대상건 대비 M스캔율":
-                y_col, title_name = "대상대비_M스캔율", "대상건 대비 M스캔율"
-            else:
-                y_col, title_name = "스캔대비_M스캔율", "스캔건 대비 M스캔율"
-                
-            fig.add_trace(go.Scatter(
-                x=top["조직"], y=top[y_col], 
-                name=title_name, mode="lines+markers", 
-                marker=dict(size=8, color="#FF6B6B"), 
-                text=[f"{v:.1f}%" for v in top[y_col]], 
-                textposition="bottom center"
-            ))
-            
             fig.update_layout(
                 xaxis_tickangle=-45, height=400, 
-                title=f"전체 스캔율 vs {title_name}", 
+                title=f"조직별 {rate_label} (M스캔건 상위 {top_n}개)",
                 yaxis_range=[0, 100], yaxis_title="비율(%)",
                 legend=dict(orientation="h", y=1.12)
             )
@@ -265,48 +254,45 @@ def dashboard_page():
         with c2:
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
-                x=top["조직"], y=top["M스캔건"], 
-                name="M스캔건", 
-                texttemplate="%{y:,.0f}", textposition="outside", 
-                marker_color="#2ECC71"
+                x=top["조직"], y=top["M스캔건"],
+                marker_color="#FF6B6B",
+                name="M스캔건",
+                texttemplate="%{y:,.0f}", textposition="outside"
             ))
             fig2.update_layout(
-                xaxis_tickangle=-45, height=400, 
-                title="M스캔건 (참고)", 
-                yaxis_title="건수",
+                xaxis_tickangle=-45, height=400,
+                title="조직별 M스캔 건수", yaxis_title="건수",
                 showlegend=False
             )
             st.plotly_chart(fig2, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황 (KeyError 해결)
+    # 탭 2: M스캔 활용 현황 (단일 막대그래프)
     # ==========================================
     with tab_map:
         st.subheader("조직별 M스캔 활용도 분포")
         mc1, mc2 = st.columns([1, 2])
         with mc1: map_level = st.selectbox("집계 단위", ["부문", "총괄", "부서", "영업가족"], key="map_level")
-        with mc2: map_type = st.radio("차트 유형", ["파이 차트", "트리맵", "가로막대"], horizontal=True, key="map_type")
+        with mc2: st.caption("📊 M스캔 건수 기준 내림차순 정렬")
 
         map_agg = build_org_stats(df_sel, sel_months, map_level)
-        # ✅ KeyError 해결: "M스캔율" 대신 "M스캔건" 또는 "스캔대비_M스캔율" 사용
-        map_agg = map_agg[map_agg["M스캔건"] > 0].sort_values("M스캔건", ascending=False).reset_index(drop=True)
+        map_agg = map_agg[map_agg["M스캔건"] > 0].reset_index(drop=True)
         
         if map_agg.empty:
             st.info("M스캔 활용 데이터가 없습니다.")
         else:
-            if map_type == "파이 차트":
-                fig_pie = px.pie(map_agg, values="M스캔건", names="조직", title="조직별 M스캔 건수 비중", hole=0.4)
-                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
-                st.plotly_chart(fig_pie, use_container_width=True)
-            elif map_type == "트리맵":
-                fig_tree = px.treemap(map_agg, path=["조직"], values="M스캔건", color="스캔대비_M스캔율", 
-                                      title="조직별 M스캔 활용도 (건수/율)", color_continuous_scale="YlOrRd")
-                st.plotly_chart(fig_tree, use_container_width=True)
-            else:
-                fig_bar = px.bar(map_agg, y="조직", x="스캔대비_M스캔율", orientation="h", color="M스캔건",
-                                 title="M스캔율 상위 조직", text_auto=".1f%", color_continuous_scale="Blues")
-                fig_bar.update_layout(height=500)
-                st.plotly_chart(fig_bar, use_container_width=True)
+            fig_bar = px.bar(
+                map_agg, y="조직", x="M스캔율", orientation="h",
+                color="M스캔건", text_auto=".1f%",
+                color_continuous_scale="YlOrRd",
+                title="전체스캔건 중 M스캔 비중 및 건수 분포"
+            )
+            fig_bar.update_layout(
+                height=600, 
+                xaxis_title="M스캔율 (%)",
+                yaxis=dict(autorange="reversed")
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
     # ==========================================
     # 탭 3: 가이드 & 프로세스
@@ -367,11 +353,10 @@ def dashboard_page():
     st.subheader("📥 리포트 내보내기")
     if st.button("현황 데이터 Excel 다운로드", use_container_width=True):
         wb = Workbook(); ws = wb.active; ws.title = "M스캔 현황"
-        ws.append(["순위", "조직", "대상건", "전체스캔건", "M스캔건", "전체스캔율", "대상대비_M스캔율", "스캔대비_M스캔율"])
+        ws.append(["순위", "조직", "대상건", "전체스캔건", "M스캔건", "전체스캔율", "M스캔율"])
         for _, row in agg.iterrows():
             ws.append([row["순위"], row["조직"], int(row["대상건"]), int(row["전체스캔건"]), 
-                       int(row["M스캔건"]), f"{row['전체스캔율']:.1f}%", 
-                       f"{row['대상대비_M스캔율']:.1f}%", f"{row['스캔대비_M스캔율']:.1f}%"])
+                       int(row["M스캔건"]), f"{row['전체스캔율']:.1f}%", f"{row['M스캔율']:.1f}%"])
         buf = io.BytesIO(); wb.save(buf); buf.seek(0)
         st.download_button("Excel 저장", buf, f"M스캔_현황_{datetime.now().strftime('%Y%m%d')}.xlsx", 
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -388,7 +373,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v8.1 | M스캔 전용 집계 | KeyError 해결 | 비율 선택 동기화 완료")
+            st.caption("v9.0 | M스캔 전용 집계 | 반응형 지표 선택 | 단일 막대차트")
         dashboard_page()
 
 if __name__ == "__main__":
