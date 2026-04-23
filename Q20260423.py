@@ -219,6 +219,7 @@ def dashboard_page():
         agg_sorted = agg.sort_values("M스캔율_대상", ascending=False).reset_index(drop=True)
         agg_sorted["순위"] = range(1, len(agg_sorted) + 1)
 
+        # ✅ matplotlib 의존성 제거: background_gradient → highlight_max 교체
         st.dataframe(
             agg_sorted[["순위", "조직", "대상건", "전체스캔건", "M스캔건", 
                         "M스캔율_대상", "평균_대상", "격차_대상",
@@ -228,8 +229,8 @@ def dashboard_page():
                 "M스캔율_대상":"{:.1f}%", "평균_대상":"{:.1f}%", "격차_대상":"{:+.1f}%",
                 "M스캔율_완료":"{:.1f}%", "평균_완료":"{:.1f}%", "격차_완료":"{:+.1f}%"
             })
-            .background_gradient(subset=["M스캔율_대상"], cmap="YlGn", vmin=0, vmax=100)
-            .background_gradient(subset=["M스캔율_완료"], cmap="Blues", vmin=0, vmax=100),
+            .highlight_max(subset=["M스캔율_대상"], color="#d1f2eb")
+            .highlight_max(subset=["M스캔율_완료"], color="#d6eaf8"),
             use_container_width=True, hide_index=True
         )
 
@@ -287,7 +288,6 @@ def dashboard_page():
     # 탭 3: 가이드 & 프로세스 (레이아웃 최적화)
     # ==========================================
     with tab_guide:
-        # 상단: 프로세스 & FAQ (스크롤 최소화)
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
         for step in PROCESS_FLOW:
             with st.expander(f"🔹 Step {step['step']}: {step['title']}"):
@@ -296,13 +296,11 @@ def dashboard_page():
         st.subheader("❓ 자주 묻는 질문(FAQ)")
         for q, a in MOBILE_GUIDE["faq"]: st.markdown(f"**Q. {q}**\n\nA. {a}")
 
-        # 하단: 책임판매 필수 서류 4종 (단일 화면 최적화)
         st.divider()
         st.subheader("📝 책임판매 필수 서류 4종 (체결 전 100% 완비 원칙)")
         doc_df = pd.DataFrame(GUIDANCE_DOCS[1:], columns=GUIDANCE_DOCS[0]).set_index("No.")
         st.dataframe(doc_df, use_container_width=True, hide_index=True, height=280)
         
-        # Do 리스트 가로 배치
         do_cols = st.columns(2)
         for i, item in enumerate(MOBILE_GUIDE["do_list"][:4]):
             do_cols[i%2].markdown(item)
@@ -352,7 +350,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v10.0 | M스캔 전용 집계 | 대상/완료 구분 시각화 | 레이아웃 최적화")
+            st.caption("v10.1 | M스캔 전용 집계 | matplotlib 의존성 제거 완료")
         dashboard_page()
 
 if __name__ == "__main__":
