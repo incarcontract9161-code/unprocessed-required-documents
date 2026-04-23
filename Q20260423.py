@@ -118,7 +118,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼
+# 3. 집계 헬퍼 (YYYYMM 형식 변환 적용)
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누적"):
@@ -140,6 +140,8 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
 
     if view_mode == "월별":
         agg_df = agg_df.rename(columns={"월_피리어드": "월"})
+        # ✅ 2026-01 → 202601 형식으로 변환
+        agg_df["월"] = agg_df["월"].astype(str).str.replace("-", "")
         agg_df["표시명"] = agg_df["월"].astype(str) + " | " + agg_df[group_cols[-1]].astype(str)
     else:
         agg_df["표시명"] = agg_df[group_cols[-1]].astype(str)
@@ -185,6 +187,7 @@ def dashboard_page():
     df_sel = df[df[month_col].isin(sel_months)].copy()
     if df_sel.empty: st.info("선택한 기간에 데이터가 없습니다."); return
 
+    # 🟦 전사 평균 계산
     total_docs = int(df_sel["대상건"].sum())
     total_scanned = int(df_sel["전체스캔건"].sum())
     m_scanned = int(df_sel["M스캔건"].sum())
@@ -196,7 +199,7 @@ def dashboard_page():
     tab_dash, tab_map, tab_guide, tab_manual = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"])
 
     # ==========================================
-    # 탭 1: 현황 대시보드 (차트 X/Y축 최적화 적용)
+    # 탭 1: 현황 대시보드
     # ==========================================
     with tab_dash:
         ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
@@ -230,15 +233,17 @@ def dashboard_page():
         baseline_val = avg_val if "평균" in compare_type else target_val
         baseline_label = "전사 평균" if "평균" in compare_type else "목표치(+10%)"
 
+        # ✅ 필터 적용 → 정렬 → 상위 제한
         if min_target > 0: agg = agg[agg["대상건"] >= min_target].copy()
         agg = agg.sort_values(rate_col, ascending=False).reset_index(drop=True)
         
+        chart_limit = top_n_filter if top_n_filter else 30
         if view_mode == "월별":
             agg["순위"] = agg.groupby("월").cumcount() + 1
             if top_n_filter: agg = agg[agg["순위"] <= top_n_filter].reset_index(drop=True)
         else:
             agg["순위"] = range(1, len(agg) + 1)
-            if top_n_filter: agg = agg.head(top_n_filter).reset_index(drop=True)
+            agg = agg.head(chart_limit).reset_index(drop=True)
 
         agg["기준치"] = baseline_val
         agg["대비_격차"] = (agg[rate_col] - baseline_val).round(1)
@@ -269,49 +274,33 @@ def dashboard_page():
             use_container_width=True, hide_index=True, height=350
         )
 
-        # 🟦 동적 Y축 상한선 계산 함수
-        def calc_y_max(series):
-            m = series.dropna().max()
-            if m <= 0: return 20
-            if m < 5: return 10
-            if m < 10: return 20
-            if m < 20: return 30
-            if m < 30: return 40
-            if m < 50: return 60
-            if m < 80: return 100
-            return 110
-
-        top = agg.head(30)
-        y_max = calc_y_max(top[rate_col])
-
+        # ✅ 모든 그래프에 필터 적용된 top 데이터 사용
+        top = agg
         if view_mode == "월별":
-            # ✅ 가로축: 조직명, 색상/그룹: 월
+            # ✅ 가로축: 조직명, 색상/그룹: 월 (YYYYMM 정렬 유지)
+            months_order = sorted(top["월"].dropna().unique())
             fig = px.bar(
                 top, x=agg_group, y=rate_col, color="월", barmode="group",
                 title=f"월별 {rate_type} 비교 (조직별)", text_auto=".1f%",
-                category_orders={"월": sorted(top["월"].dropna().unique())} # 월 순서 고정
+                category_orders={"월": months_order}
             )
-            fig.update_layout(
-                yaxis_range=[0, y_max], yaxis_title="M스캔율(%)",
-                legend_title="월", xaxis_tickangle=-45
-            )
+            fig.update_layout(yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], yaxis_title="M스캔율(%)", legend_title="월", xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
             
-            # ✅ 보조: 월별 추세선 (X축: 월, 선별 조직 추이)
+            # ✅ 월간 추이선: X축을 202601, 202602 형식으로 명확히 표시
             fig_line = go.Figure()
-            months_sorted = sorted(top["월"].dropna().unique())
             for org in top[agg_group].unique():
                 org_data = top[top[agg_group] == org].sort_values("월")
                 fig_line.add_trace(go.Scatter(
-                    x=org_data["월"].astype(str), y=org_data[rate_col],
-                    name=org, mode="lines+markers"
+                    x=org_data["월"], y=org_data[rate_col],
+                    name=org, mode="lines+markers", text=[f"{v:.1f}%" for v in org_data[rate_col]], textposition="top center"
                 ))
             fig_line.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2,
                                annotation_text=f"{baseline_label} {baseline_val:.1f}%")
             fig_line.update_layout(
                 title="조직별 월간 추이",
-                yaxis_range=[0, y_max], yaxis_title="M스캔율(%)",
-                xaxis_title="월", xaxis=dict(tickangle=-45),
+                yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], yaxis_title="M스캔율(%)",
+                xaxis=dict(title="월", tickangle=-45, categoryorder="array", categoryarray=months_order),
                 legend=dict(orientation="h", y=1.15)
             )
             st.plotly_chart(fig_line, use_container_width=True)
@@ -319,14 +308,14 @@ def dashboard_page():
             fig = go.Figure()
             fig.add_trace(go.Bar(x=top["표시명"], y=top[rate_col], text=[f"{v:.1f}%" for v in top[rate_col]], textposition="outside", marker_color=top[rate_col]))
             fig.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2, annotation_text=f"{baseline_label} {baseline_val:.1f}%")
-            fig.update_layout(title=f"조직별 {rate_type} (정렬: 내림차순)", xaxis_tickangle=-45, yaxis_range=[0, y_max], yaxis_title="M스캔율(%)", height=420)
+            fig.update_layout(title=f"조직별 {rate_type} (정렬: 내림차순)", xaxis_tickangle=-45, yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], yaxis_title="M스캔율(%)", height=420)
             st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황
+    # 탭 2: M스캔 활용 현황 (평균/목표 선택 기능 추가)
     # ==========================================
     with tab_map:
-        mc1, mc2, mc3, mc4 = st.columns([1, 1, 1, 1])
+        mc1, mc2, mc3, mc4, mc5 = st.columns([1, 1, 1, 1, 1])
         with mc1: map_level = st.selectbox("집계 단위", ["부문", "총괄", "부서", "영업가족"], key="map_level")
         with mc2: map_type = st.radio("차트 유형", ["가로막대", "파이 차트"], horizontal=True, key="map_type")
         with mc3:
@@ -337,10 +326,15 @@ def dashboard_page():
             map_top_n = None
             if map_level == "영업가족":
                 map_top_n = st.number_input("🔝 상위 표시 개수", min_value=5, step=5, value=30, key="top_n_map")
+        with mc5:
+            map_compare = st.radio("🎯 비교 기준", ["전사 평균대비", "목표치(+10%) 대비"], horizontal=True, key="map_compare")
 
         map_agg = build_org_stats(df_sel, sel_months, [map_level], "누적")
         map_agg["M스캔율_대상"] = safe_rate(map_agg["M스캔건"], map_agg["대상건"])
-        map_agg["격차"] = map_agg["M스캔율_대상"] - avg_rate_target
+        
+        # ✅ 선택 기준에 따른 격차 재계산
+        map_baseline = avg_rate_target if "평균" in map_compare else round(avg_rate_target * 1.1, 1)
+        map_agg["격차"] = map_agg["M스캔율_대상"] - map_baseline
         
         if map_min_target > 0: map_agg = map_agg[map_agg["대상건"] >= map_min_target].copy()
         map_agg = map_agg[map_agg["M스캔건"] > 0].sort_values("M스캔율_대상", ascending=False).reset_index(drop=True)
@@ -351,9 +345,9 @@ def dashboard_page():
         else:
             if map_type == "가로막대":
                 fig_bar = px.bar(map_agg, y=map_level, x="M스캔율_대상", orientation="h", color="격차", text_auto=".1f%",
-                                 color_continuous_scale=["#FF4444", "#888888", "#44CC44"], title="전사 평균 대비 조직별 M스캔율 분포")
+                                 color_continuous_scale=["#FF4444", "#888888", "#44CC44"], title=f"전사 평균/목표 대비 조직별 M스캔율 분포")
                 fig_bar.update_layout(height=600, xaxis_title="M스캔율 (대상대비 %)", yaxis=dict(autorange="reversed"))
-                fig_bar.add_vline(x=avg_rate_target, line_dash="dash", line_color="black")
+                fig_bar.add_vline(x=map_baseline, line_dash="dash", line_color="black", annotation_text=f"기준선 {map_baseline:.1f}%")
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
                 fig_pie = px.pie(map_agg, values="M스캔건", names=map_level, title="조직별 M스캔 건수 비중", hole=0.4)
@@ -429,7 +423,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v12.3 | M스캔 전용 집계 | 월별차트 X축 조직/월 분리 | Y축 동적 스케일링")
+            st.caption("v12.4 | M스캔 전용 집계 | YYYYMM X축 정렬 | 필터-차트 동기화 | 활용현황 기준선택")
         dashboard_page()
 
 if __name__ == "__main__":
