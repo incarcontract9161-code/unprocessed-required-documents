@@ -219,7 +219,7 @@ def dashboard_page():
 
         agg = build_org_stats(df_sel, sel_months, group_cols, view_mode)
 
-        rate_type = st.radio("📊 지표 선택", ["M스캔율 (대상대비)", "M스캔율 (완료대비)"], horizontal=True, index=0, key="rate_type")
+        rate_type = st.radio("📊 지표 선", ["M스캔율 (대상대비)", "M스캔율 (완료대비)"], horizontal=True, index=0, key="rate_type")
         compare_type = st.radio("🎯 비교 기준 선택", ["전사 평균대비", "목표치(+10%) 대비"], horizontal=True, index=0, key="compare_type")
 
         is_target = "대상대비" in rate_type
@@ -278,7 +278,6 @@ def dashboard_page():
                 category_orders={"월_표시": months_order},
                 hover_data={**{col: True for col in group_cols}, "대상건":":,", "전체스캔건":":,", "M스캔건":":,"}
             )
-            # 동적 Y축: 최대값의 1.2배, 최소 5, 최대 100
             y_max_bar = max(top[rate_col].max() * 1.2, 5)
             fig.update_layout(yaxis_range=[0, y_max_bar], yaxis_title="M스캔율(%)", legend_title="월", xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
@@ -291,7 +290,6 @@ def dashboard_page():
             if trend_orgs:
                 trend_data = agg[agg[agg_group].isin(trend_orgs)].copy()
                 max_val = trend_data[rate_col].max()
-                # ✅ Y축 자동 스케일링: 10% 미만 시 0~20%로 축소, 그 외 유연 적용
                 y_upper = max(max_val * 1.25, 5)
                 if max_val < 10: y_upper = min(y_upper, 20)
                 elif max_val < 30: y_upper = min(y_upper, 40)
@@ -343,7 +341,7 @@ def dashboard_page():
             st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황 (계층 Hover 적용)
+    # 탭 2: M스캔 활용 현황 (✅ ValueError 해결: 중복 컬럼 집계 방지)
     # ==========================================
     with tab_map:
         mc1, mc2, mc3, mc4, mc5 = st.columns([1, 1, 1, 1, 1])
@@ -356,11 +354,13 @@ def dashboard_page():
         with mc5:
             map_compare = st.radio("🎯 비교 기준", ["전사 평균대비", "목표치(+10%) 대비"], horizontal=True, key="map_compare")
 
-        # ✅ 집계 시 계층 컬럼 유지 (hover용)
-        map_agg = df_sel.groupby(map_level).agg({
-            '대상건': 'sum', '전체스캔건': 'sum', 'M스캔건': 'sum',
-            '부문': 'first', '총괄': 'first', '부서': 'first', '영업가족': 'first'
-        }).reset_index()
+        # ✅ 중복 컬럼 오류 방지: groupby 기준 컬럼은 agg에서 제외
+        hierarchy_cols = ['부문', '총괄', '부서', '영업가족']
+        # map_level이 집계 기준이므로, 나머지 계층 정보만 'first'로 가져옴
+        agg_dict = {col: 'first' for col in hierarchy_cols if col != map_level}
+        agg_dict.update({'대상건': 'sum', '전체스캔건': 'sum', 'M스캔건': 'sum'})
+        
+        map_agg = df_sel.groupby(map_level).agg(agg_dict).reset_index()
         map_agg["M스캔율_대상"] = safe_rate(map_agg["M스캔건"], map_agg["대상건"])
         
         map_baseline = avg_rate_target if "평균" in map_compare else round(avg_rate_target * 1.1, 1)
@@ -456,7 +456,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v12.6 | M스캔 전용 집계 | Y축동적스케일 | 조직검색추이 | 계층Hover")
+            st.caption("v12.7 | M스캔 전용 집계 | 중복컬럼충돌해결 | Y축동적 | 계층Hover")
         dashboard_page()
 
 if __name__ == "__main__":
