@@ -118,7 +118,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 집계 헬퍼 (월 표시 형식 변경 적용)
+# 3. 집계 헬퍼
 # ==========================================
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누적"):
@@ -140,7 +140,6 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
 
     if view_mode == "월별":
         agg_df = agg_df.rename(columns={"월_피리어드": "월"})
-        # ✅ 월 표시 형식: 2026-01 → 2026.1월
         agg_df["월_표시"] = agg_df["월"].apply(lambda x: f"{x.replace('-', '.')[:7]}월" if pd.notna(x) else "")
         agg_df["표시명"] = agg_df["월_표시"] + " | " + agg_df[group_cols[-1]].astype(str)
     else:
@@ -200,7 +199,7 @@ def dashboard_page():
     tab_dash, tab_map, tab_guide, tab_manual = st.tabs(["📊 현황 대시보드", "🗺️ M스캔 활용 현황", "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"])
 
     # ==========================================
-    # 탭 1: 현황 대시보드 (모든 조직 단위 필터 적용)
+    # 탭 1: 현황 대시보드
     # ==========================================
     with tab_dash:
         ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
@@ -210,10 +209,8 @@ def dashboard_page():
             view_mode_ui = st.radio("보기 방식", ["누적 통합", "월별 비교"], horizontal=True, key="view_mode")
             view_mode = "월별" if view_mode_ui == "월별 비교" else "누적"
         with ctrl3:
-            # ✅ 모든 조직 단위에 필터 적용 (기본값 10)
             min_target = st.number_input("🔻 최소 대상건수 필터", min_value=0, step=10, value=10, key="min_target_dash")
         with ctrl4:
-            # ✅ 모든 조직 단위에 상위 표시 개수 적용 (기본값 20)
             top_n_filter = st.number_input("🔝 상위 표시 개수", min_value=5, step=5, value=20, key="top_n_dash")
 
         hierarchy = ["부문", "총괄", "부서", "영업가족"]
@@ -222,7 +219,7 @@ def dashboard_page():
 
         agg = build_org_stats(df_sel, sel_months, group_cols, view_mode)
 
-        rate_type = st.radio("📊 지표 선", ["M스캔율 (대상대비)", "M스캔율 (완료대비)"], horizontal=True, index=0, key="rate_type")
+        rate_type = st.radio("📊 지표 선택", ["M스캔율 (대상대비)", "M스캔율 (완료대비)"], horizontal=True, index=0, key="rate_type")
         compare_type = st.radio("🎯 비교 기준 선택", ["전사 평균대비", "목표치(+10%) 대비"], horizontal=True, index=0, key="compare_type")
 
         is_target = "대상대비" in rate_type
@@ -232,7 +229,6 @@ def dashboard_page():
         baseline_val = avg_val if "평균" in compare_type else target_val
         baseline_label = "전사 평균" if "평균" in compare_type else "목표치(+10%)"
 
-        # ✅ 필터 적용 → 정렬 → 상위 제한
         if min_target > 0: agg = agg[agg["대상건"] >= min_target].copy()
         agg = agg.sort_values(rate_col, ascending=False).reset_index(drop=True)
         
@@ -272,10 +268,9 @@ def dashboard_page():
             use_container_width=True, hide_index=True, height=350
         )
 
-        # ✅ 모든 그래프에 필터 적용된 top 데이터 사용
+        # ✅ 월별 비교 차트
         top = agg
         if view_mode == "월별":
-            # ✅ 가로축: 조직명, 색상/그룹: 월 (2026.1월 형식)
             months_order = sorted(top["월_표시"].dropna().unique())
             fig = px.bar(
                 top, x=agg_group, y=rate_col, color="월_표시", barmode="group",
@@ -283,73 +278,72 @@ def dashboard_page():
                 category_orders={"월_표시": months_order},
                 hover_data={**{col: True for col in group_cols}, "대상건":":,", "전체스캔건":":,", "M스캔건":":,"}
             )
-            fig.update_layout(yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], yaxis_title="M스캔율(%)", legend_title="월", xaxis_tickangle=-45)
+            # 동적 Y축: 최대값의 1.2배, 최소 5, 최대 100
+            y_max_bar = max(top[rate_col].max() * 1.2, 5)
+            fig.update_layout(yaxis_range=[0, y_max_bar], yaxis_title="M스캔율(%)", legend_title="월", xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
             
-            # ✅ 월간 추이선: X축을 2026.1월, 2026.2월 형식으로 명확히 표시
-            fig_line = go.Figure()
-            for org in top[agg_group].unique():
-                org_data = top[top[agg_group] == org].sort_values("월")
-                # ✅ hover에 계층 정보 포함
-                hover_text = []
-                for _, row in org_data.iterrows():
-                    hover_info = f"월: {row['월_표시']}<br>"
-                    for col in group_cols:
-                        if col in row:
-                            hover_info += f"{col}: {row[col]}<br>"
-                    hover_info += f"M스캔율: {row[rate_col]:.1f}%<br>대상건: {row['대상건']:,}"
-                    hover_text.append(hover_info)
-                
-                fig_line.add_trace(go.Scatter(
-                    x=org_data["월_표시"], y=org_data[rate_col],
-                    name=org, mode="lines+markers", 
-                    text=[f"{v:.1f}%" for v in org_data[rate_col]], 
-                    textposition="top center",
-                    hovertext=hover_text,
-                    hoverinfo="text"
-                ))
-            fig_line.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2,
-                               annotation_text=f"{baseline_label} {baseline_val:.1f}%")
-            fig_line.update_layout(
-                title="조직별 월간 추이",
-                yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], yaxis_title="M스캔율(%)",
-                xaxis=dict(title="월", tickangle=-45, categoryorder="array", categoryarray=months_order),
-                legend=dict(orientation="h", y=1.15)
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
+            # ✅ 조직별 월간 추이 (검색/선택 기능 + 동적 Y축)
+            st.subheader("📉 조직별 월간 추이 분석")
+            all_orgs = sorted(agg[agg_group].unique())
+            trend_orgs = st.multiselect("추이 분석할 조직 선택 (검색 가능)", all_orgs, default=all_orgs[:5], max_selections=10, key="trend_org_select")
+            
+            if trend_orgs:
+                trend_data = agg[agg[agg_group].isin(trend_orgs)].copy()
+                max_val = trend_data[rate_col].max()
+                # ✅ Y축 자동 스케일링: 10% 미만 시 0~20%로 축소, 그 외 유연 적용
+                y_upper = max(max_val * 1.25, 5)
+                if max_val < 10: y_upper = min(y_upper, 20)
+                elif max_val < 30: y_upper = min(y_upper, 40)
+                else: y_upper = 100
+
+                fig_line = go.Figure()
+                months_sorted = sorted(trend_data["월_표시"].dropna().unique())
+                for org in trend_orgs:
+                    org_data = trend_data[trend_data[agg_group] == org].sort_values("월")
+                    hover_text = []
+                    for _, row in org_data.iterrows():
+                        hover_info = f"월: {row['월_표시']}<br>"
+                        for col in group_cols:
+                            if col in row: hover_info += f"{col}: {row[col]}<br>"
+                        hover_info += f"M스캔율: {row[rate_col]:.1f}%<br>대상건: {row['대상건']:,}"
+                        hover_text.append(hover_info)
+                    
+                    fig_line.add_trace(go.Scatter(
+                        x=org_data["월_표시"], y=org_data[rate_col],
+                        name=org, mode="lines+markers", 
+                        text=[f"{v:.1f}%" for v in org_data[rate_col]], 
+                        textposition="top center",
+                        hovertext=hover_text, hoverinfo="text"
+                    ))
+                fig_line.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2,
+                                   annotation_text=f"{baseline_label} {baseline_val:.1f}%")
+                fig_line.update_layout(
+                    title="조직별 월간 추이",
+                    yaxis_range=[0, y_upper], yaxis_title="M스캔율(%)",
+                    xaxis=dict(title="월", tickangle=-45, categoryorder="array", categoryarray=months_sorted),
+                    legend=dict(orientation="h", y=1.15)
+                )
+                st.plotly_chart(fig_line, use_container_width=True)
         else:
-            # ✅ 누적 통합 뷰: hover에 계층 정보 포함
             fig = go.Figure()
             hover_texts = []
             for _, row in top.iterrows():
                 hover_info = f"조직: {row['표시명']}<br>"
                 for col in group_cols:
-                    if col in row:
-                        hover_info += f"{col}: {row[col]}<br>"
+                    if col in row: hover_info += f"{col}: {row[col]}<br>"
                 hover_info += f"M스캔율: {row[rate_col]:.1f}%<br>대상건: {row['대상건']:,}<br>전체스캔건: {row['전체스캔건']:,}<br>M스캔건: {row['M스캔건']:,}"
                 hover_texts.append(hover_info)
             
-            fig.add_trace(go.Bar(
-                x=top["표시명"], y=top[rate_col], 
-                text=[f"{v:.1f}%" for v in top[rate_col]], 
-                textposition="outside", 
-                marker_color=top[rate_col],
-                hovertext=hover_texts,
-                hoverinfo="text"
-            ))
-            fig.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2, 
-                         annotation_text=f"{baseline_label} {baseline_val:.1f}%")
-            fig.update_layout(
-                title=f"조직별 {rate_type} (정렬: 내림차순)", 
-                xaxis_tickangle=-45, 
-                yaxis_range=[0, 20 if top[rate_col].max() < 10 else 100], 
-                yaxis_title="M스캔율(%)", 
-                height=420
-            )
+            fig.add_trace(go.Bar(x=top["표시명"], y=top[rate_col], text=[f"{v:.1f}%" for v in top[rate_col]], 
+                                 textposition="outside", marker_color=top[rate_col], hovertext=hover_texts, hoverinfo="text"))
+            fig.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2, annotation_text=f"{baseline_label} {baseline_val:.1f}%")
+            fig.update_layout(title=f"조직별 {rate_type} (정렬: 내림차순)", xaxis_tickangle=-45, 
+                              yaxis_range=[0, max(top[rate_col].max() * 1.2, 5)], yaxis_title="M스캔율(%)", height=420)
             st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 탭 2: M스캔 활용 현황 (평균/목표 선택 기능 추가)
+    # 탭 2: M스캔 활용 현황 (계층 Hover 적용)
     # ==========================================
     with tab_map:
         mc1, mc2, mc3, mc4, mc5 = st.columns([1, 1, 1, 1, 1])
@@ -362,10 +356,13 @@ def dashboard_page():
         with mc5:
             map_compare = st.radio("🎯 비교 기준", ["전사 평균대비", "목표치(+10%) 대비"], horizontal=True, key="map_compare")
 
-        map_agg = build_org_stats(df_sel, sel_months, [map_level], "누적")
+        # ✅ 집계 시 계층 컬럼 유지 (hover용)
+        map_agg = df_sel.groupby(map_level).agg({
+            '대상건': 'sum', '전체스캔건': 'sum', 'M스캔건': 'sum',
+            '부문': 'first', '총괄': 'first', '부서': 'first', '영업가족': 'first'
+        }).reset_index()
         map_agg["M스캔율_대상"] = safe_rate(map_agg["M스캔건"], map_agg["대상건"])
         
-        # ✅ 선택 기준에 따른 격차 재계산
         map_baseline = avg_rate_target if "평균" in map_compare else round(avg_rate_target * 1.1, 1)
         map_agg["격차"] = map_agg["M스캔율_대상"] - map_baseline
         
@@ -377,10 +374,11 @@ def dashboard_page():
             st.info("M스캔 활용 데이터가 없습니다.")
         else:
             if map_type == "가로막대":
+                # ✅ hover_data에 상세 계층 정보 추가
                 fig_bar = px.bar(map_agg, y=map_level, x="M스캔율_대상", orientation="h", color="격차", text_auto=".1f%",
                                  color_continuous_scale=["#FF4444", "#888888", "#44CC44"], 
                                  title=f"전사 평균/목표 대비 조직별 M스캔율 분포",
-                                 hover_data={"대상건":":,", "전체스캔건":":,", "M스캔건":":,"})
+                                 hover_data=["부문", "총괄", "부서", "영업가족", "대상건", "전체스캔건", "M스캔건"])
                 fig_bar.update_layout(height=600, xaxis_title="M스캔율 (대상대비 %)", yaxis=dict(autorange="reversed"))
                 fig_bar.add_vline(x=map_baseline, line_dash="dash", line_color="black", annotation_text=f"기준선 {map_baseline:.1f}%")
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -458,7 +456,7 @@ def main():
             if st.button("🚪 로그아웃", use_container_width=True):
                 st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v12.5 | M스캔 전용 집계 | 모든조직 필터적용 | 계층hover | 월표시개선")
+            st.caption("v12.6 | M스캔 전용 집계 | Y축동적스케일 | 조직검색추이 | 계층Hover")
         dashboard_page()
 
 if __name__ == "__main__":
