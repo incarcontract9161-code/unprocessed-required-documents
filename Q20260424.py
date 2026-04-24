@@ -130,7 +130,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수 (자동배분 로직 포함)
+# 3. 목표 관리 함수
 # ==========================================
 @st.cache_data(ttl=300)
 def load_targets():
@@ -194,22 +194,22 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
     return agg_df
 
 # ==========================================
-# 4. 목표 자동배분 함수 (실적규모 기반 차등 적용)
+# 4. 목표 자동배분 함수 (실적규모 기반 현실적 차등)
 # ==========================================
-def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10, current_month=None):
+def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     """
-    영업가족별 실적규모에 따라 목표 자동 배분
-    - 소규모: +15~20%, 중규모: +10%, 대규모: +5~8%
-    - 현실 반영: 진도율/성장률/계절성 보정
+    영업가족별 실적규모에 따라 현실적인 목표 자동 배분
+    - 기본: 현재 실적율 × 1.10 (10% 상향)
+    - 소규모(하위 30%): +15~20% (성장 유도, 건수 적어 달성 용이)
+    - 중규모(중간 40%): +10% (기준)
+    - 대규모(상위 30%): +5~8% (현실적 유지, 건수 많아 부담 고려)
     """
     if df_actual.empty or "영업가족" not in df_actual.columns:
         return pd.DataFrame(columns=["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"])
     
-    # 1. 실적 데이터 집계
+    # 실적 데이터 집계
     actual_stats = df_actual.groupby("영업가족").agg({
-        "대상건": "sum",
-        "M스캔건": "sum",
-        "전체스캔건": "sum"
+        "대상건": "sum", "M스캔건": "sum", "전체스캔건": "sum"
     }).reset_index()
     
     if actual_stats.empty:
@@ -218,69 +218,36 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10, current_mo
     # 현재 실적율 계산
     actual_stats["현재_실적율"] = safe_rate(actual_stats["M스캔건"], actual_stats["대상건"])
     
-    # 2. 실적 규모 백분위수 계산 (그룹핑 기준)
+    # 실적 규모 백분위수 계산
     p30 = actual_stats["대상건"].quantile(0.3)
     p70 = actual_stats["대상건"].quantile(0.7)
     max_vol = actual_stats["대상건"].max()
     
-    # 3. 전월 데이터 로드 (성장률 계산용) - 실제 구현 시 별도 파일 또는 히스토리 활용
-    # 여기서는 현재 데이터만 기반으로 시뮬레이션
-    
-    # 4. 개별 목표 계산 함수
     def calc_target(row):
         volume = row["대상건"]
         current_rate = row["현재_실적율"]
         
-        # === 규모별 기본 조정계수 ===
+        # 규모별 기본 조정계수
         if volume < p30:  # 소규모: 성장 유도
-            base_adj = 1.15 + min(0.05, (p30 - volume) / max(p30, 1) * 0.05)  # +15~20%
+            base_adj = 1.15 + min(0.05, (p30 - volume) / max(p30, 1) * 0.05)
             group_label = "소규모(성장유도)"
         elif volume < p70:  # 중규모: 기준
             base_adj = 1.10
             group_label = "중규모(기준)"
         else:  # 대규모: 현실적 유지
             ratio = (volume - p70) / max(max_vol - p70, 1)
-            base_adj = 1.05 + ratio * 0.03  # +5~8%
+            base_adj = 1.05 + ratio * 0.03
             group_label = "대규모(현실유지)"
         
-        # === 현실 반영 보정계수 ===
-        correction = 1.0
-        corrections = []
-        
-        # 진도율 보정: 현재 월별 진도 <50% 시 목표 상향폭 50% 완화
-        if current_rate < 50:
-            correction *= 0.95
-            corrections.append("진도율보정(-5%)")
-        
-        # 성장률 보정: 실제 구현 시 전월 데이터와 비교
-        # 여기서는 현재 실적율 70% 이상이면 +2%, 30% 이하면 -2% 시뮬레이션
-        if current_rate >= 70:
-            correction *= 1.02
-            corrections.append("고실적보정(+2%)")
-        elif current_rate < 30:
-            correction *= 0.98
-            corrections.append("저실적보정(-2%)")
-        
-        # 계절성 보정: 분기말(3/6/9/12월) 대규모 조직 +1%
-        if current_month and current_month[4:6] in ["03", "06", "09", "12"] and volume >= p70:
-            correction *= 1.01
-            corrections.append("분기말보정(+1%)")
-        
-        # 최종 조정계수
-        final_adj = base_adj * correction
-        
         # 목표율 계산 (하한 30%, 상한 95% 제한)
-        target_rate = min(max(current_rate * final_adj, 30.0), 95.0)
+        target_rate = min(max(current_rate * base_adj, 30.0), 95.0)
         target_rate = round(target_rate, 1)
         
         # 대상건 목표 (기본 5% 상향, 소규모는 10%)
         vol_adj = 1.10 if volume < p30 else 1.05
         target_volume = int(row["대상건"] * vol_adj)
         
-        # 배분사유 생성
-        reason = f"{group_label} | 기본{int((base_adj-1)*100)}%"
-        if corrections:
-            reason += f" | {'/'.join(corrections)}"
+        reason = f"{group_label} | 기본+{int((base_adj-1)*100)}%"
         
         return pd.Series({
             "M스캔율_목표": target_rate,
@@ -289,31 +256,27 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10, current_mo
             "특이사항": ""
         })
     
-    # 5. 적용 및 결과 반환
     result = actual_stats.apply(calc_target, axis=1)
     final_df = pd.concat([actual_stats[["영업가족", "대상건", "M스캔건", "현재_실적율"]], result], axis=1)
     
-    # 기존 목표 데이터와 병합 (수정 이력 유지)
-    if not df_existing.empty and "영업가족" in df_existing.columns:
-        for col in ["배분사유", "특이사항"]:
-            if col not in df_existing.columns:
-                df_existing[col] = ""
+    # 기존 목표 데이터와 병합 (특이사항 유지)
+    if not df_existing.empty and "영업가족" in df_existing.columns and "특이사항" in df_existing.columns:
         final_df = final_df.merge(df_existing[["영업가족", "특이사항"]], on="영업가족", how="left")
         final_df["특이사항"] = final_df["특이사항"].fillna("")
     
     return final_df[["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 5. 미리보기 및 시뮬레이션 함수
+# 5. 목표대비 현황 시뮬레이션 (ImportError 해결: background_gradient → highlight_max)
 # ==========================================
-def show_achievement_simulation(df_targets, df_actual, sel_months):
-    """목표달성율 시뮬레이션 차트"""
+def show_achievement_simulation(df_targets, df_actual, sel_months, view_mode="누적"):
+    """목표달성율 시뮬레이션 차트 (월별/누적 선택)"""
     if df_targets.empty or df_actual.empty:
         st.info("데이터가 없습니다.")
         return
     
     # 실적 데이터 집계
-    actual_stats = build_org_stats(df_actual, sel_months, ["영업가족"], "누적")
+    actual_stats = build_org_stats(df_actual, sel_months, ["영업가족"], view_mode)
     
     # 병합
     merged = actual_stats.merge(df_targets, on="영업가족", how="left")
@@ -364,14 +327,16 @@ def show_achievement_simulation(df_targets, df_actual, sel_months):
         fig2.update_layout(height=400, xaxis_range=[0,200])
         st.plotly_chart(fig2, use_container_width=True)
     
-    # 상세 테이블
+    # 상세 테이블 (✅ ImportError 해결: background_gradient → highlight_max)
     st.dataframe(
         merged[["영업가족", "대상건", "M스캔건", "M스캔율_대상", "M스캔율_목표", "M스캔율_달성율"]]
         .sort_values("M스캔율_달성율")
         .style.format({
             "대상건": "{:,}", "M스캔건": "{:,}",
             "M스캔율_대상": "{:.1f}%", "M스캔율_목표": "{:.1f}%", "M스캔율_달성율": "{:.1f}%"
-        }).background_gradient(subset=["M스캔율_달성율"], cmap="RdYlGn", vmin=0, vmax=200),
+        })
+        .highlight_max(subset=["M스캔율_달성율"], color="#d4edda")  # ✅ matplotlib 불필요
+        .highlight_min(subset=["M스캔율_달성율"], color="#f8d7da"),
         use_container_width=True, height=300
     )
 
@@ -499,7 +464,7 @@ def dashboard_page():
             use_container_width=True, hide_index=True, height=350
         )
 
-        # 차트 렌더링 (기존 코드 유지)
+        # 차트 렌더링
         top = agg
         if view_mode == "월별":
             months_order = sorted(top["월_표시"].dropna().unique())
@@ -516,6 +481,9 @@ def dashboard_page():
             st.subheader("📉 조직별 월간 추이 분석")
             all_orgs = sorted(agg[agg_group].unique())
             trend_orgs = st.multiselect("추이 분석할 조직 선택 (검색 가능)", all_orgs, default=all_orgs[:5], max_selections=10, key="trend_org_select")
+            
+            # ✅ 데이터 표시 체크박스 추가
+            show_data_labels = st.checkbox("📊 데이터 라벨 표시", value=True, key="show_trend_labels")
             
             if trend_orgs:
                 trend_data = agg[agg[agg_group].isin(trend_orgs)].copy()
@@ -540,8 +508,8 @@ def dashboard_page():
                     fig_line.add_trace(go.Scatter(
                         x=org_data["월_표시"], y=org_data[rate_col],
                         name=org, mode="lines+markers", 
-                        text=[f"{v:.1f}%" for v in org_data[rate_col]], 
-                        textposition="top center",
+                        text=[f"{v:.1f}%" for v in org_data[rate_col]] if show_data_labels else None,
+                        textposition="top center" if show_data_labels else None,
                         hovertext=hover_text, hoverinfo="text"
                     ))
                 fig_line.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2,
@@ -571,7 +539,7 @@ def dashboard_page():
             st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 탭 2: 목표관리 & 공문출력 (자동배분 + 수정 + 출력 통합)
+    # 탭 2: 목표관리 & 공문출력 (단순화 + 수정 기능)
     # ==========================================
     with tab_target:
         st.subheader("🎯 영업가족별 목표 설정 및 공문 출력")
@@ -586,47 +554,18 @@ def dashboard_page():
             all_families = []
         
         # ===== 2-1. 목표 자동배분 섹션 =====
-        st.markdown("### ① 목표 자동배분 (실적규모 기반)")
-        st.caption("영업가족별 실적 규모에 따라 소규모는 상향, 대규모는 현실적으로 차등 배분합니다.")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            increase_pct = st.slider("📈 전체 목표 상향률", 5, 25, 10, 1, help="전사 평균 대비 목표 상향 비율")
-        with col2:
-            small_adj = st.slider("🔼 소규모 추가상향", 0, 10, 5, 1, help="소규모 조직의 추가 목표 상향폭 (%)")
-        with col3:
-            large_adj = st.slider("🔽 대규모 현실보정", 0, 5, 2, 1, help="대규모 조직의 목표 하향 보정폭 (%)")
+        st.markdown("### ① 목표 자동배분 (실적규모 기반 현실적 차등)")
+        st.caption("소규모: +15~20% | 중규모: +10% | 대규모: +5~8% (건수 감안 현실적 목표)")
         
         if st.button("🔄 자동배분 실행", use_container_width=True, type="primary"):
             with st.spinner("🎯 실적규모 분석 및 목표 배분 중..."):
-                current_month = sel_months[-1] if sel_months else datetime.now().strftime("%Y-%m")
-                new_targets = auto_allocate_targets(df_sel, df_targets, increase_rate=increase_pct/100, current_month=current_month)
+                new_targets = auto_allocate_targets(df_sel, df_targets, increase_rate=0.10)
                 
-                # 소규모/대규모 조정 반영
                 if not new_targets.empty:
-                    p30 = new_targets["대상건_목표"].quantile(0.3)
-                    p70 = new_targets["대상건_목표"].quantile(0.7)
-                    
-                    def adjust_target(row):
-                        vol = row["대상건_목표"]
-                        rate = row["M스캔율_목표"]
-                        if vol < p30:  # 소규모 추가상향
-                            new_rate = min(rate + small_adj, 95.0)
-                            reason = row["배분사유"] + f" | 소규모추가+{small_adj}%"
-                        elif vol >= p70:  # 대규모 현실보정
-                            new_rate = max(rate - large_adj, 30.0)
-                            reason = row["배분사유"] + f" | 대규모보정-{large_adj}%"
-                        else:
-                            new_rate = rate
-                            reason = row["배분사유"]
-                        return pd.Series({"M스캔율_목표": round(new_rate, 1), "배분사유": reason})
-                    
-                    new_targets[["M스캔율_목표", "배분사유"]] = new_targets.apply(adjust_target, axis=1)
-                
-                # 세션에 저장
-                st.session_state["auto_targets"] = new_targets
-                st.success(f"✅ {len(new_targets)}개 영업가족 목표 자동배분 완료!")
-                st.rerun()
+                    # 세션에 저장
+                    st.session_state["auto_targets"] = new_targets
+                    st.success(f"✅ {len(new_targets)}개 영업가족 목표 자동배분 완료!")
+                    st.rerun()
         
         # 자동배분 결과 표시
         if "auto_targets" in st.session_state:
@@ -648,13 +587,12 @@ def dashboard_page():
         
         st.divider()
         
-        # ===== 2-2. 수동 수정 및 미리보기 =====
-        st.markdown("### ② 목표 수정 및 미리보기")
-        st.caption("자동배분 또는 기존 목표를 수정하고, 달성율 시뮬레이션으로 미리 확인할 수 있습니다.")
+        # ===== 2-2. 수동 수정 (출력자 수정 기능) =====
+        st.markdown("### ② 목표 수정 (출력자가 영업가족 특성 반영)")
+        st.caption("자동배분 또는 기존 목표를 수정할 수 있습니다. 수정 후 '저장'을 눌러주세요.")
         
         # 기존 목표 로드 또는 빈 데이터프레임
         if df_targets.empty and all_families:
-            # 새 데이터프레임 생성
             df_targets = pd.DataFrame({
                 "영업가족": all_families,
                 "M스캔율_목표": 50.0,
@@ -672,7 +610,7 @@ def dashboard_page():
                     "M스캔율_목표": st.column_config.NumberColumn("M스캔율 목표(%)", min_value=0, max_value=100, step=0.5, format="%.1f%%"),
                     "대상건_목표": st.column_config.NumberColumn("대상건 목표", min_value=0, step=10, format="%d 건"),
                     "배분사유": st.column_config.TextColumn("배분사유", disabled=True),
-                    "특이사항": st.column_config.TextColumn("특이사항 (출력 시 포함)", max_chars=50)
+                    "특이사항": st.column_config.TextColumn("특이사항 (공문 출력 시 포함)", max_chars=50)
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -680,7 +618,7 @@ def dashboard_page():
                 key="target_editor"
             )
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button("💾 수정사항 저장", use_container_width=True):
                     save_targets(edited_df)
@@ -688,23 +626,81 @@ def dashboard_page():
                     st.rerun()
             with col2:
                 if st.button("📊 달성율 시뮬레이션", use_container_width=True):
-                    show_achievement_simulation(edited_df, df_sel, sel_months)
-            with col3:
-                if st.button("🗑️ 초기화", use_container_width=True):
-                    if st.session_state.get("confirm_reset"):
-                        df_targets = pd.DataFrame(columns=["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"])
-                        save_targets(df_targets)
-                        st.success("🗑️ 목표가 초기화되었습니다.")
-                        st.session_state["confirm_reset"] = False
-                        st.rerun()
-                    else:
-                        st.warning("⚠️ 정말 초기화하시겠습니까?")
-                        st.session_state["confirm_reset"] = True
+                    # ✅ 월별/누적 선택 추가
+                    sim_view = st.radio("시뮬레이션 보기", ["누적 통합", "월별 비교"], horizontal=True, key="sim_view")
+                    sim_mode = "월별" if sim_view == "월별 비교" else "누적"
+                    show_achievement_simulation(edited_df, df_sel, sel_months, sim_mode)
         
         st.divider()
         
-        # ===== 2-3. 공문형식 리포트 출력 =====
-        st.markdown("### ③ 공문형식 리포트 출력")
+        # ===== 2-3. 목표대비 현황 그래프 (월별/누적 선택) =====
+        st.markdown("### ③ 목표대비 현황 그래프")
+        st.caption("월별 또는 누적으로 목표대비 현재 스캔율을 확인하세요.")
+        
+        graph_view = st.radio("그래프 보기 방식", ["누적 통합", "월별 비교"], horizontal=True, key="graph_view")
+        graph_mode = "월별" if graph_view == "월별 비교" else "누적"
+        
+        if not df_targets.empty and "영업가족" in df_sel.columns:
+            actual_stats = build_org_stats(df_sel, sel_months, ["영업가족"], graph_mode)
+            merged = actual_stats.merge(df_targets, on="영업가족", how="left")
+            merged["M스캔율_목표"] = merged["M스캔율_목표"].fillna(50.0)
+            merged["M스캔율_달성율"] = ((merged["M스캔율_대상"] / merged["M스캔율_목표"].replace(0, float('nan'))) * 100).round(1).fillna(0)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                # 막대차트: 목표 vs 실제
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=merged["영업가족"],
+                    y=merged["M스캔율_대상"],
+                    name="실제 스캔율",
+                    marker_color="#3498DB",
+                    text=[f"{v:.1f}%" for v in merged["M스캔율_대상"]],
+                    textposition="outside"
+                ))
+                fig.add_trace(go.Scatter(
+                    x=merged["영업가족"],
+                    y=merged["M스캔율_목표"],
+                    name="목표 스캔율",
+                    mode="lines+markers",
+                    line=dict(color="#E74C3C", width=3),
+                    marker=dict(size=8),
+                    text=[f"{v:.1f}%" for v in merged["M스캔율_목표"]],
+                    textposition="top center"
+                ))
+                fig.update_layout(
+                    title="영업가족별 목표 vs 실제 스캔율",
+                    xaxis_tickangle=-45,
+                    yaxis_title="M스캔율(%)",
+                    height=400,
+                    legend=dict(orientation="h", y=1.15)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with c2:
+                # 달성율 차트
+                fig2 = px.bar(
+                    merged,
+                    x="영업가족",
+                    y="M스캔율_달성율",
+                    color="M스캔율_달성율",
+                    color_continuous_scale="RdYlGn",
+                    title="영업가족별 목표 달성율",
+                    text_auto=".1f%"
+                )
+                fig2.update_layout(
+                    xaxis_tickangle=-45,
+                    yaxis_title="달성율(%)",
+                    height=400,
+                    coloraxis_colorbar=dict(title="달성율")
+                )
+                fig2.add_hline(y=100, line_dash="dash", line_color="red", annotation_text="목표선")
+                st.plotly_chart(fig2, use_container_width=True)
+        
+        st.divider()
+        
+        # ===== 2-4. 공문형식 리포트 출력 =====
+        st.markdown("### ④ 공문형식 리포트 출력")
         st.markdown("목표관리 현황과 모바일동의 안내자료를 결합한 공문형식 리포트를 생성합니다.")
         
         col1, col2 = st.columns(2)
@@ -927,7 +923,7 @@ def generate_official_report(df_sel, df_targets, sel_months, title, dept, date_s
         
         # 테이블 데이터 준비
         table_data = [['영업가족', '대상건', 'M스캔건', 'M스캔율(실제)', 'M스캔율(목표)', '달성율', '특이사항']]
-        for _, row in merged_df.head(15).iterrows():  # 상위 15명만
+        for _, row in merged_df.head(15).iterrows():
             table_data.append([
                 row['영업가족'],
                 f"{int(row['대상건']):,}",
@@ -1008,7 +1004,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.0 | 실적규모기반 목표자동배분 | 출력전수정 | 현실반영보정")
+            st.caption("v14.1 | ImportError해결 | 실적규모기반목표 | 출력전수정 | 그래프토글")
         dashboard_page()
 
 if __name__ == "__main__":
