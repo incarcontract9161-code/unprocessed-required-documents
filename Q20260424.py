@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -206,7 +206,6 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
             if vol < p30: adj, label = 1.15 + min(0.05, (p30 - vol) / max(p30, 1) * 0.05), "소규모(성장유도)"
             elif vol < p70: adj, label = 1.10, "중규모(기준)"
             else: adj, label = 1.05 + (vol - p70) / max(max_vol - p70, 1) * 0.03, "대규모(현실유지)"
-            # ✅ 대상건_목표는 내부적으로 계산하지만 반환하지 않음 (표시하지 않음)
             results.append({"조직단계": group_name, "조직명": str(row[group_col]), "M스캔율_목표": round(min(max(rate * adj, 30.0), 95.0), 1), "배분사유": f"{label} | 기본+{int((adj-1)*100)}%", "특이사항": ""})
         return pd.DataFrame(results)
     all_targets = pd.concat([calc_targets_for_group(df_actual, g, g) for g in ["영업가족", "부서", "총괄", "부문"]], ignore_index=True)
@@ -320,8 +319,6 @@ def generate_agent_report_pdf(title, dept, date_str, recipient, table_data, spec
     pdf_elements.append(Paragraph(f"담당자: _________________ (인)", styles['SmallText']))
     
     # ✅ 페이지 나누기 후 매뉴얼 첨부
-    from reportlab.platypus import PageBreak
-    
     pdf_elements.append(PageBreak())
     pdf_elements.append(Paragraph("📎 [별첨 1] 모바일동의(M스캔) 집중 관리 안내", styles['CustTitle']))
     pdf_elements.append(Spacer(1, 5*mm))
@@ -441,7 +438,7 @@ def dashboard_page():
         met1, met2, met3, met4 = st.columns(4)
         with met1: st.metric("🏢 전사 평균", f"{avg_rate_target:.1f}%")
         with met2: st.metric("🎯 목표치 (+10%)", f"{target_val:.1f}%")
-        with met3: st.metric("📊 선택 조직 평균", f"{agg[rate_col].mean():.1f}%")
+        with met3: st.metric("📊 선 조직 평균", f"{agg[rate_col].mean():.1f}%")
         with met4: st.metric("📐 기준 대비 격차", f"{agg[rate_col].mean() - baseline_val:+.1f}%")
         st.divider()
 
@@ -639,12 +636,12 @@ def dashboard_page():
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 d = st.session_state.edited_doc_df.iloc[0]
-                                # ✅ PDF 테이블에서 목표 대상건 제거
+                                # ✅ PDF 테이블에서 목표 대상건 제거 (f-string 문법 오류 수정)
                                 table_data = [
                                     ['지표', '목표', '실적', '차이'],
                                     ['M스캔율', f"{d['목표_M스캔율']:.1f}%", f"{d['실제_M스캔율']:.1f}%", f"{d['실제_M스캔율']-d['목표_M스캔율']:+.1f}%"],
                                     ['대상건', '-', f"{d['실제_대상건']:,}건", '-'],
-                                    ['M스캔건', '-', f"{d['실제_M스캔건']:,}건', '-']
+                                    ['M스캔건', '-', f"{d['실제_M스캔건']:,}건", '-']
                                 ]
                                 if d['특이사항']:
                                     table_data.append(['특이사항', d['특이사항'], '', ''])
