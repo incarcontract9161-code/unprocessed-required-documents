@@ -320,11 +320,12 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
     diff = actual_rate - target_rate
     special_note = agent_data.get('특이사항', '')
     
+    # ✅ SyntaxError 수정: f-string 따옴표 종결
     status_data = [
         ['지표', '목표', '실적', '차이'],
         ['M스캔율', f"{target_rate:.1f}%", f"{actual_rate:.1f}%", f"{diff:+.1f}%"],
         ['대상건', f"{target_vol:,}건", f"{actual_vol:,}건", f"{actual_vol-target_vol:+,}건"],
-        ['M스캔건', '-', f"{m_scan_vol:,}건', '-']
+        ['M스캔건', '-', f"{m_scan_vol:,}건", '-']
     ]
     if special_note:
         status_data.append(['특이사항', special_note, '', ''])
@@ -510,12 +511,7 @@ def dashboard_page():
             trend_orgs = st.multiselect("추이 분석할 조직 선택", all_orgs, default=all_orgs[:5], max_selections=10, key="trend_org_select")
             show_data_labels = st.checkbox("📊 데이터 라벨 표시", value=True, key="show_trend_labels")
             
-            # ✅ 전사 평균 월별 계산 (KeyError 완전 차단)
-            monthly_stats = df_sel.groupby("월_피리어드").agg(
-                M스캔건=("M스캔건", "sum"),
-                대상건=("대상건", "sum"),
-                전체스캔건=("전체스캔건", "sum")
-            ).reset_index()
+            monthly_stats = df_sel.groupby("월_피리어드").agg(M스캔건=("M스캔건", "sum"), 대상건=("대상건", "sum"), 전체스캔건=("전체스캔건", "sum")).reset_index()
             monthly_stats.columns = monthly_stats.columns.str.strip()
             monthly_stats["월_표시"] = monthly_stats["월_피리어드"].apply(lambda x: f"{x.replace('-', '.')[:7]}월")
             monthly_stats[rate_col] = (monthly_stats["M스캔건"] / monthly_stats["대상건"].replace(0, float('nan')) * 100).round(1).fillna(0.0) if is_target else (monthly_stats["M스캔건"] / monthly_stats["전체스캔건"].replace(0, float('nan')) * 100).round(1).fillna(0.0)
@@ -619,7 +615,7 @@ def dashboard_page():
             col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("💾 목표 파일 저장", key="save_auto_targets"):
-                    if save_targets_to_file(st.session_state["auto_targets"]):
+                    if save_targets(st.session_state["auto_targets"]):
                         st.success("✅ `target_settings.xlsx` 파일이 저장되었습니다. GitHub에 업로드해주세요.")
                         del st.session_state["auto_targets"]
                         st.rerun()
@@ -704,7 +700,7 @@ def dashboard_page():
                         st.download_button("📥 편집파일 다운로드", data=buf, file_name=f"편집_{selected_agent}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                         
                 with col3:
-                    if st.button("🖨️ 선택 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
+                    if st.button("🖨️ 선 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 buf = generate_agent_report_pdf(
@@ -793,7 +789,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.5 | 목표자동배분저장 | 공문수정생성 | Style오류해결 | KeyError차단")
+            st.caption("v14.6 | SyntaxError해결 | 목표자동배분저장 | 공문수정생성")
         dashboard_page()
 
 if __name__ == "__main__":
