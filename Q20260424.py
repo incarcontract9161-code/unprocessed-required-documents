@@ -131,7 +131,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수
+# 3. 목표 관리 함수 (KeyError 해결 적용)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_targets():
@@ -197,7 +197,7 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
     return agg_df
 
 # ==========================================
-# 4. 목표 자동배분 함수
+# 4. 목표 자동배분 함수 (✅ KeyError 완벽 해결)
 # ==========================================
 def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     if df_actual.empty or "영업가족" not in df_actual.columns:
@@ -243,21 +243,36 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
             "M스캔율_목표": target_rate,
             "대상건_목표": target_volume,
             "배분사유": reason,
-            "특이사항": ""
+            "특이사항": ""  # 기본값 명시
         })
     
+    # ✅ 안전한 병합 로직 적용
     result = actual_stats.apply(calc_target, axis=1)
-    final_df = pd.concat([actual_stats[["영업가족", "대상건", "M스캔건", "현재_실적율"]], result], axis=1)
     
+    # 결과 데이터프레임 생성 (특이사항 컬럼 보장)
+    final_df = pd.concat([
+        actual_stats[["영업가족", "대상건", "M스캔건", "현재_실적율"]].reset_index(drop=True),
+        result.reset_index(drop=True)
+    ], axis=1)
+    
+    # 기존 데이터와 병합 시 특이사항 컬럼 처리
     if not df_existing.empty and "영업가족" in df_existing.columns:
+        # 기존 데이터에서 영업가족과 특이사항만 추출
         if "특이사항" in df_existing.columns:
-            final_df = final_df.merge(df_existing[["영업가족", "특이사항"]], on="영업가족", how="left")
-            final_df["특이사항"] = final_df["특이사항"].fillna("")
+            existing_special = df_existing[["영업가족", "특이사항"]].copy()
         else:
-            final_df["특이사항"] = ""
+            existing_special = df_existing[["영업가족"]].copy()
+            existing_special["특이사항"] = ""
+            
+        # 왼쪽 조인으로 기존 특이사항 유지
+        final_df = final_df.merge(existing_special, on="영업가족", how="left")
+        # 빈 값 채우기
+        final_df["특이사항"] = final_df["특이사항"].fillna("")
     else:
+        # 기존 데이터가 없으면 빈 문자열로 초기화
         final_df["특이사항"] = ""
     
+    # 필요한 컬럼만 반환
     return final_df[["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]]
 
 # ==========================================
@@ -569,7 +584,7 @@ def dashboard_page():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력 (✅ StreamlitAPIException 해결)
+    # 탭 3: 목표관리 & 공문출력
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -632,7 +647,6 @@ def dashboard_page():
                     "특이사항": agent_target_row["특이사항"].iloc[0] if not agent_target_row.empty else ""
                 }
                 
-                # ✅ 명시적 타입 캐스팅으로 Streamlit 호환성 해결
                 df_editor = pd.DataFrame([edit_data])
                 df_editor["대상건"] = df_editor["대상건"].astype(int)
                 df_editor["M스캔건"] = df_editor["M스캔건"].astype(int)
@@ -681,7 +695,7 @@ def dashboard_page():
                             st.success("✅ 수정된 목표가 저장되었습니다.")
                             st.rerun()
                         else:
-                            st.error("❌ 저장 실")
+                            st.error("❌ 저장 패")
                             
                 with col2:
                     if st.button("📥 현재 편집 데이터 다운로드", use_container_width=True):
@@ -780,7 +794,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.7 | StreamlitType호환성해결 | 목표자동배분저장 | 공문수정생성")
+            st.caption("v14.8 | KeyError해결 | 목표자동배분저장 | 공문수정생성")
         dashboard_page()
 
 if __name__ == "__main__":
