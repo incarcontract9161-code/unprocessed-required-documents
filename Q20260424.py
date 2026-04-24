@@ -6,15 +6,14 @@ import plotly.graph_objects as go
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, PageBreak, HRFlowable)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import numpy as np
 
@@ -130,46 +129,37 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수 (Type Error 해결)
+# 3. 목표 관리 함수
 # ==========================================
 @st.cache_data(ttl=60)
 def load_targets():
-    """목표 파일 로드 (타입 안정화 추가)"""
     if not os.path.exists(TARGET_FILE):
         return pd.DataFrame(columns=["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"])
     try:
         df = pd.read_excel(TARGET_FILE)
         required_cols = ["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]
-        
-        # Ensure required columns exist
         for col in required_cols:
             if col not in df.columns:
                 df[col] = ""
-        
-        # Type Casting to prevent StreamlitAPIException
-        # 명시적 타입 변환으로 data_editor 충돌 방지
         df["영업가족"] = df["영업가족"].astype(str)
         df["M스캔율_목표"] = pd.to_numeric(df["M스캔율_목표"], errors="coerce").fillna(0.0)
         df["대상건_목표"] = pd.to_numeric(df["대상건_목표"], errors="coerce").fillna(0)
         df["배분사유"] = df["배분사유"].astype(str)
         df["특이사항"] = df["특이사항"].astype(str)
-        
         return df[required_cols]
     except Exception as e:
         st.error(f"목표 파일 읽기 오류: {e}")
         return pd.DataFrame(columns=["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"])
 
 def save_targets(df_targets):
-    """목표 파일 저장 (컬럼 정렬 및 예외 처리 포함)"""
     try:
         required_cols = ["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]
-        # Ensure df_targets has required columns before saving
         for col in required_cols:
             if col not in df_targets.columns:
                 df_targets[col] = ""
         df_save = df_targets[required_cols].copy()
         df_save.to_excel(TARGET_FILE, index=False)
-        st.cache_data.clear() # 캐시 초기화
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"목표 저장 실패: {e}")
@@ -268,36 +258,123 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return final_df[["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 5. 목표대비 현황 시뮬레이션
+# 5. 공문 생성 함수 (영업가족 특정 + 목표대비 포함)
 # ==========================================
-def show_target_comparison(df_targets, df_actual, sel_months):
-    if df_targets.empty or df_actual.empty:
-        st.info("데이터가 없습니다.")
-        return
+def generate_agent_report(df_sel, df_targets, agent_name, sel_months, title, dept, date_str, recipient):
+    """특정 영업가족 전용 공문 생성"""
+    try:
+        pdfmetrics.registerFont(TTFont('NotoSansKR', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
+        font_name = 'NotoSansKR'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('NanumGothic', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'))
+            font_name = 'NanumGothic'
+        except:
+            font_name = 'Helvetica'
     
-    actual_stats = build_org_stats(df_actual, sel_months, ["영업가족"], "누적")
-    merged = actual_stats.merge(df_targets, on="영업가족", how="left")
-    merged["M스캔율_목표"] = merged["M스캔율_목표"].fillna(50.0)
-    merged["대상건_목표"] = merged["대상건_목표"].fillna(100)
-    merged["M스캔율_달성율"] = ((merged["M스캔율_대상"] / merged["M스캔율_목표"].replace(0, float('nan'))) * 100).round(1).fillna(0)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Korean', fontName=font_name, fontSize=10))
+    styles.add(ParagraphStyle(name='Title', fontName=font_name, fontSize=16, bold=True, alignment=1))
+    styles.add(ParagraphStyle(name='Subtitle', fontName=font_name, fontSize=12, bold=True))
+    styles.add(ParagraphStyle(name='Small', fontName=font_name, fontSize=8))
     
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric("📈 평균 달성율", f"{merged['M스캔율_달성율'].mean():.1f}%")
-    with col2: st.metric("✅ 목표달성 조직", f"{len(merged[merged['M스캔율_달성율'] >= 100])}개")
-    with col3: st.metric("📊 전체 조직", f"{len(merged)}개")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
+    elements = []
     
-    st.divider()
+    # 헤더
+    elements.append(Paragraph(title, styles['Title']))
+    elements.append(Spacer(1, 8*mm))
     
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=merged["영업가족"], y=merged["M스캔율_대상"], name="실제 스캔율", marker_color="#3498DB", text=[f"{v:.1f}%" for v in merged["M스캔율_대상"]], textposition="outside"))
-    fig.add_trace(go.Scatter(x=merged["영업가족"], y=merged["M스캔율_목표"], name="목표 스캔율", mode="lines+markers", line=dict(color="#E74C3C", width=3), marker=dict(size=8), text=[f"{v:.1f}%" for v in merged["M스캔율_목표"]], textposition="top center"))
-    fig.update_layout(title="영업가족별 목표 vs 실제 스캔율", xaxis_tickangle=-45, yaxis_title="M스캔율(%)", height=400, legend=dict(orientation="h", y=1.15))
-    st.plotly_chart(fig, use_container_width=True)
+    header_data = [
+        ['문서번호:', f'{dept}-{datetime.now().strftime("%Y%m%d")}-001'],
+        ['발급일자:', date_str],
+        ['수신:', recipient],
+        ['발신:', dept]
+    ]
+    header_table = Table(header_data, colWidths=[40*mm, 80*mm])
+    header_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'), ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6)
+    ]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 8*mm))
     
-    fig2 = px.histogram(merged, x="M스캔율_달성율", nbins=20, color_discrete_sequence=["#3498DB"], title="목표 달성율 분포")
-    fig2.add_vline(x=100, line_dash="dash", line_color="red", annotation_text="목표")
-    fig2.update_layout(height=300, xaxis_range=[0,200])
-    st.plotly_chart(fig2, use_container_width=True)
+    # 대상 영업가족 정보
+    elements.append(Paragraph(f"【대상 영업가족】 {agent_name}", styles['Subtitle']))
+    elements.append(Spacer(1, 4*mm))
+    
+    # 목표 vs 실제 현황 테이블
+    agent_stats = build_org_stats(df_sel, sel_months, ["영업가족"], "누적")
+    agent_row = agent_stats[agent_stats["영업가족"] == agent_name]
+    agent_target = df_targets[df_targets["영업가족"] == agent_name]
+    
+    if not agent_row.empty and not agent_target.empty:
+        actual_rate = agent_row["M스캔율_대상"].iloc[0]
+        target_rate = agent_target["M스캔율_목표"].iloc[0]
+        target_vol = agent_target["대상건_목표"].iloc[0]
+        actual_vol = agent_row["대상건"].iloc[0]
+        m_scan_vol = agent_row["M스캔건"].iloc[0]
+        diff = actual_rate - target_rate
+        
+        status_data = [
+            ['지표', '목표', '실적', '차이'],
+            ['M스캔율', f"{target_rate:.1f}%", f"{actual_rate:.1f}%", f"{diff:+.1f}%"],
+            ['대상건', f"{target_vol:,}건", f"{actual_vol:,}건", f"{actual_vol-target_vol:+,}건"],
+            ['M스캔건', '-', f"{m_scan_vol:,}건", '-']
+        ]
+        status_table = Table(status_data, colWidths=[40*mm, 35*mm, 35*mm, 35*mm])
+        status_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+        ]))
+        elements.append(status_table)
+        elements.append(Spacer(1, 6*mm))
+    else:
+        elements.append(Paragraph("해당 기간 데이터 또는 목표가 없습니다.", styles['Small']))
+        elements.append(Spacer(1, 6*mm))
+        
+    # 모바일동의 안내
+    elements.append(Paragraph("【모바일동의(M스캔) 안내】", styles['Subtitle']))
+    for reason in MOBILE_GUIDE["reasons"]:
+        elements.append(Paragraph(f"• {reason}", styles['Korean']))
+    elements.append(Spacer(1, 4*mm))
+    
+    # 필수 서류
+    elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['Subtitle']))
+    doc_table_data = [['No.', '서류명', '법적근거']]
+    for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
+        doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
+    
+    doc_table = Table(doc_table_data, colWidths=[10*mm, 50*mm, 60*mm])
+    doc_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E75B6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP')
+    ]))
+    elements.append(doc_table)
+    elements.append(Spacer(1, 8*mm))
+    
+    # 요청사항
+    elements.append(Paragraph("【요청사항】", styles['Subtitle']))
+    elements.append(Paragraph("1. 설정된 목표를 반드시 달성하여 주시기 바랍니다.", styles['Korean']))
+    elements.append(Paragraph("2. 모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.", styles['Korean']))
+    elements.append(Paragraph("3. 2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.", styles['Korean']))
+    
+    elements.append(Spacer(1, 15*mm))
+    elements.append(Paragraph(f"{dept}", styles['Korean']))
+    elements.append(Spacer(1, 5*mm))
+    elements.append(Paragraph(f"담당자: _________________ (인)", styles['Small']))
+    
+    doc.build(elements)
+    buf.seek(0)
+    return buf
 
 # ==========================================
 # 6. UI – 로그인 & 대시보드
@@ -346,13 +423,14 @@ def dashboard_page():
 
     st.divider()
 
-    tab_dash, tab_target, tab_map, tab_guide, tab_manual = st.tabs([
-        "📊 현황 대시보드", "🎯 목표관리 & 공문출력", "🗺️ M스캔 활용 현황", 
+    # ✅ 탭 순서 변경: 현황 → 활용 → 목표관리 → 가이드 → 매뉴얼
+    tab_dash, tab_map, tab_target, tab_guide, tab_manual = st.tabs([
+        "📊 현황 대시보드", "🗺️ M스캔 활용 현황", "🎯 목표관리 & 공문출력", 
         "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"
     ])
 
     # ==========================================
-    # 탭 1: 현황 대시보드
+    # 탭 1: 현황 대시보드 (전사평균 월별 표시 & 라벨 수정)
     # ==========================================
     with tab_dash:
         ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
@@ -384,8 +462,6 @@ def dashboard_page():
         baseline_label = "전사 평균" if "평균" in compare_type else "목표치(+10%)"
 
         if min_target > 0: agg = agg[agg["대상건"] >= min_target].copy()
-        
-        # ✅ 선택한 방향으로 정렬 후 N개 추출
         ascending_sort = (filter_direction == "하위 N개 (낮은 순)")
         agg = agg.sort_values(rate_col, ascending=ascending_sort).head(n_display).reset_index(drop=True)
         
@@ -401,7 +477,7 @@ def dashboard_page():
         met1, met2, met3, met4 = st.columns(4)
         with met1: st.metric("🏢 전사 평균", f"{avg_val:.1f}%")
         with met2: st.metric("🎯 목표치 (+10%)", f"{target_val:.1f}%")
-        with met3: st.metric("📊 선택 조직 평균", f"{agg[rate_col].mean():.1f}%")
+        with met3: st.metric("📊 선 조직 평균", f"{agg[rate_col].mean():.1f}%")
         with met4: 
             delta = agg[rate_col].mean() - baseline_val
             st.metric("📐 기준 대비 격차", f"{delta:+.1f}%", delta=round(delta, 1))
@@ -437,6 +513,11 @@ def dashboard_page():
             trend_orgs = st.multiselect("추이 분석할 조직 선택", all_orgs, default=all_orgs[:5], max_selections=10, key="trend_org_select")
             show_data_labels = st.checkbox("📊 데이터 라벨 표시", value=True, key="show_trend_labels")
             
+            # ✅ 전사 평균 월별 계산
+            monthly_avg = df_sel.groupby("월_피리어드")[rate_col].mean().reset_index()
+            monthly_avg["월_표시"] = monthly_avg["월_피리어드"].apply(lambda x: f"{x.replace('-', '.')[:7]}월")
+            monthly_avg = monthly_avg[monthly_avg["월_표시"].isin(months_order)]
+            
             if trend_orgs:
                 trend_data = agg[agg[agg_group].isin(trend_orgs)].copy()
                 max_val = trend_data[rate_col].max()
@@ -447,13 +528,39 @@ def dashboard_page():
 
                 fig_line = go.Figure()
                 months_sorted = sorted(trend_data["월_표시"].dropna().unique())
+                
+                # ✅ 데이터 라벨 정상 표시 로직
                 for org in trend_orgs:
                     org_data = trend_data[trend_data[agg_group] == org].sort_values("월")
                     hover_text = [f"월: {row['월_표시']}<br>" + "".join([f"{col}: {row[col]}<br>" for col in group_cols if col in row]) + f"M스캔율: {row[rate_col]:.1f}%<br>대상건: {row['대상건']:,}" for _, row in org_data.iterrows()]
                     text_vals = [f"{v:.1f}%" for v in org_data[rate_col]] if show_data_labels else None
-                    fig_line.add_trace(go.Scatter(x=org_data["월_표시"], y=org_data[rate_col], name=org, mode="lines+markers", text=text_vals, textposition="top center" if show_data_labels else None, hovertext=hover_text, hoverinfo="text"))
-                fig_line.add_hline(y=baseline_val, line_dash="dash", line_color="red", line_width=2, annotation_text=f"{baseline_label} {baseline_val:.1f}%")
-                fig_line.update_layout(title="조직별 월간 추이", yaxis_range=[0, y_upper], yaxis_title="M스캔율(%)", xaxis=dict(title="월", tickangle=-45, categoryorder="array", categoryarray=months_sorted), legend=dict(orientation="h", y=1.15))
+                    fig_line.add_trace(go.Scatter(
+                        x=org_data["월_표시"], y=org_data[rate_col],
+                        name=org, mode="lines+markers", 
+                        text=text_vals, 
+                        textposition="top center" if show_data_labels else None,
+                        hovertext=hover_text, hoverinfo="text"
+                    ))
+                
+                # ✅ 전사 평균 월별 선 추가
+                if not monthly_avg.empty:
+                    fig_line.add_trace(go.Scatter(
+                        x=monthly_avg["월_표시"], y=monthly_avg[rate_col],
+                        name="전사 평균", mode="lines+markers",
+                        line=dict(color="#000000", width=2, dash="dash"),
+                        text=[f"{v:.1f}%" for v in monthly_avg[rate_col]] if show_data_labels else None,
+                        textposition="bottom center" if show_data_labels else None,
+                        hoverinfo="text",
+                        hovertext=[f"전사 평균: {v:.1f}%" for v in monthly_avg[rate_col]]
+                    ))
+                    
+                fig_line.add_hline(y=baseline_val, line_dash="dot", line_color="red", line_width=2, annotation_text=f"{baseline_label} {baseline_val:.1f}%")
+                fig_line.update_layout(
+                    title="조직별 월간 추이",
+                    yaxis_range=[0, y_upper], yaxis_title="M스캔율(%)",
+                    xaxis=dict(title="월", tickangle=-45, categoryorder="array", categoryarray=months_sorted),
+                    legend=dict(orientation="h", y=1.15)
+                )
                 st.plotly_chart(fig_line, use_container_width=True)
         else:
             fig = go.Figure()
@@ -464,123 +571,7 @@ def dashboard_page():
             st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 탭 2: 목표관리 & 공문출력 (타입 에러 해결)
-    # ==========================================
-    with tab_target:
-        st.subheader("🎯 영업가족별 목표 설정 및 공문 출력")
-        df_targets = load_targets()
-        
-        if "영업가족" in df_sel.columns:
-            all_families = sorted(df_sel["영업가족"].dropna().unique())
-        else:
-            all_families = []
-        
-        st.markdown("### ① 목표 자동배분 (실적규모 기반 현실적 차등)")
-        if st.button("🔄 자동배분 실행", use_container_width=True, type="primary"):
-            with st.spinner("🎯 실적규모 분석 및 목표 배분 중..."):
-                new_targets = auto_allocate_targets(df_sel, df_targets, increase_rate=0.10)
-                if not new_targets.empty:
-                    st.session_state["auto_targets"] = new_targets
-                    st.success(f"✅ {len(new_targets)}개 영업가족 목표 자동배분 완료!")
-                    st.rerun()
-        
-        if "auto_targets" in st.session_state:
-            st.markdown("#### 📋 자동배분 결과 미리보기")
-            preview_df = st.session_state["auto_targets"].copy()
-            st.dataframe(preview_df[["영업가족", "M스캔율_목표", "대상건_목표", "배분사유"]].style.format({"M스캔율_목표": "{:.1f}%", "대상건_목표": "{:,}"}).highlight_max(subset=["M스캔율_목표"], color="#d4edda").highlight_min(subset=["M스캔율_목표"], color="#f8d7da"), use_container_width=True, height=250)
-            
-            if st.button("💾 이 결과로 목표 저장", key="save_auto"):
-                if save_targets(st.session_state["auto_targets"]):
-                    st.success("✅ 목표가 정상적으로 저장되었습니다!")
-                    del st.session_state["auto_targets"]
-                    st.rerun()
-                else:
-                    st.error("❌ 저장에 패했습니다.")
-        
-        st.divider()
-        
-        st.markdown("### ② 목표 수정 (출력자가 영업가족 특성 반영)")
-        # Ensure df_targets has the correct columns before passing to editor
-        required_cols = ["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]
-        if df_targets.empty and all_families:
-            df_targets = pd.DataFrame({
-                "영업가족": all_families,
-                "M스캔율_목표": 50.0,
-                "대상건_목표": 100,
-                "배분사유": "신규등록",
-                "특이사항": ""
-            })
-        
-        # Ensure all required columns exist in df_targets (just in case)
-        for col in required_cols:
-            if col not in df_targets.columns:
-                df_targets[col] = "" if col != "M스캔율_목표" and col != "대상건_목표" else 0
-
-        if not df_targets.empty:
-            # 데이터 에디터로 수정
-            edited_df = st.data_editor(
-                df_targets,
-                column_config={
-                    "영업가족": st.column_config.TextColumn("영업가족", disabled=True),
-                    "M스캔율_목표": st.column_config.NumberColumn("M스캔율 목표(%)", min_value=0, max_value=100, step=0.5, format="%.1f%%"),
-                    "대상건_목표": st.column_config.NumberColumn("대상건 목표", min_value=0, step=10, format="%d 건"),
-                    "배분사유": st.column_config.TextColumn("배분사유", disabled=True),
-                    "특이사항": st.column_config.TextColumn("특이사항 (공문 출력 시 포함)", max_chars=50)
-                },
-                hide_index=True,
-                use_container_width=True,
-                height=300,
-                key="target_editor"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("💾 수정사항 저장", use_container_width=True):
-                    if save_targets(edited_df):
-                        st.success("✅ 목표가 정상적으로 저장되었습니다!")
-                        st.rerun()
-                    else:
-                        st.error("❌ 저장에 패했습니다.")
-            with col2:
-                if st.button("📊 달성율 시뮬레이션", use_container_width=True):
-                    show_target_comparison(edited_df, df_sel, sel_months)
-        
-        st.divider()
-        
-        st.markdown("### ③ 목표대비 현황 그래프")
-        if not df_targets.empty and "영업가족" in df_sel.columns:
-            show_target_comparison(df_targets, df_sel, sel_months)
-        
-        st.divider()
-        
-        st.markdown("### ④ 공문형식 리포트 출력")
-        col1, col2 = st.columns(2)
-        with col1:
-            report_title = st.text_input("문서 제목", "M스캔 목표관리 현황 및 모바일동의 독려 안내")
-            report_dept = st.text_input("발급 부서", "영업지원팀")
-        with col2:
-            report_date = st.date_input("문서 일자", datetime.now())
-            report_recipient = st.text_input("수신", "전 영업가족")
-        
-        if st.button("🔍 출력 전 최종 확인", use_container_width=True):
-            with st.expander("📋 출력 내용 미리보기", expanded=True):
-                st.markdown(f"**문서제목**: {report_title} | **발급부서**: {report_dept} | **일자**: {report_date.strftime('%Y년 %m월 %d일')} | **수신**: {report_recipient}")
-                if not df_targets.empty:
-                    st.dataframe(df_targets.head(5)[["영업가족", "M스캔율_목표", "대상건_목표", "특이사항"]].style.format({"M스캔율_목표": "{:.1f}%", "대상건_목표": "{:,}"}), use_container_width=True, height=150)
-                else:
-                    st.warning("⚠️ 목표 데이터가 없습니다.")
-        
-        if st.button("🖨️ 공문형식 리포트 생성 (PDF)", use_container_width=True, type="primary"):
-            with st.spinner("📄 리포트 생성 중..."):
-                try:
-                    buf = generate_official_report(df_sel, df_targets, sel_months, report_title, report_dept, report_date.strftime("%Y년 %m월 %d일"), report_recipient)
-                    st.download_button(label="📥 PDF 다운로드", data=buf, file_name=f"공문_{report_title}_{report_date.strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
-                    st.success("✅ 리포트가 생성되었습니다.")
-                except Exception as e:
-                    st.error(f"❌ 리포트 생성 오류: {e}")
-
-    # ==========================================
-    # 탭 3: M스캔 활용 현황
+    # 탭 2: M스캔 활용 현황
     # ==========================================
     with tab_map:
         st.subheader("조직별 M스캔 활용도 분포")
@@ -615,6 +606,97 @@ def dashboard_page():
                 fig_pie = px.pie(map_agg, values="M스캔건", names=map_level, title="조직별 M스캔 건수 비중", hole=0.4)
                 fig_pie.update_traces(textposition="inside", textinfo="percent+label")
                 st.plotly_chart(fig_pie, use_container_width=True)
+
+    # ==========================================
+    # 탭 3: 목표관리 & 공문출력 (재설계)
+    # ==========================================
+    with tab_target:
+        st.subheader("🎯 목표 설정 & 현황 확인")
+        df_targets = load_targets()
+        
+        if "영업가족" in df_sel.columns:
+            all_families = sorted(df_sel["영업가족"].dropna().unique())
+        else:
+            all_families = []
+        
+        st.markdown("### ① 조직 단위별 목표 현황")
+        org_level = st.selectbox("조직 단위 선택", ["영업가족", "부서", "총괄", "부문"], key="target_org_level")
+        
+        # 실적 집계
+        target_stats = build_org_stats(df_sel, sel_months, [org_level], "누적")
+        target_stats = target_stats.sort_values("M스캔율_대상", ascending=False)
+        
+        # 목표 병합
+        if org_level == "영업가족":
+            merged_target = target_stats.merge(df_targets, on="영업가족", how="left")
+            merged_target["M스캔율_목표"] = merged_target["M스캔율_목표"].fillna(50.0)
+        else:
+            # 상위 조직일 경우 목표는 해당 조직 소속 영업가족 평균으로 대체 표시
+            merged_target = target_stats.copy()
+            merged_target["M스캔율_목표"] = avg_rate_target * 1.1
+            merged_target["배분사유"] = f"{org_level} 평균 목표치"
+            merged_target["특이사항"] = ""
+            
+        # 필터 적용
+        search_target = st.text_input("🔍 조직 검색", placeholder="조직명 입력", key="search_target")
+        if search_target:
+            merged_target = merged_target[merged_target[org_level].astype(str).str.contains(search_target, case=False, na=False)]
+            
+        filter_dir_target = st.radio("🔍 표시 방향", ["상위 N개", "하위 N개"], horizontal=True, key="filter_dir_target")
+        n_target = st.number_input("🔢 표시 개수", min_value=5, step=5, value=20, key="n_target")
+        
+        if filter_dir_target == "상위 N개":
+            merged_target = merged_target.sort_values("M스캔율_대상", ascending=False).head(n_target)
+        else:
+            merged_target = merged_target.sort_values("M스캔율_대상", ascending=True).head(n_target)
+            
+        merged_target["차이"] = (merged_target["M스캔율_대상"] - merged_target["M스캔율_목표"]).round(1)
+        
+        st.dataframe(
+            merged_target[[org_level, "대상건", "M스캔건", "M스캔율_대상", "M스캔율_목표", "차이"]]
+            .style.format({
+                "대상건": "{:,}", "M스캔건": "{:,}",
+                "M스캔율_대상": "{:.1f}%", "M스캔율_목표": "{:.1f}%", "차이": "{:+.1f}%"
+            })
+            .highlight_max(subset=["M스캔율_대상"], color="#d4edda")
+            .highlight_min(subset=["차이"], color="#f8d7da"),
+            use_container_width=True, height=300
+        )
+        
+        st.divider()
+        
+        # ✅ 공문 출력 섹션
+        st.markdown("### ② 공문 출력 (영업가족 개별 발송)")
+        st.caption("리스트에서 공문 출력 대상을 선택하면 해당 조직의 목표 현황과 안내장이 포함된 공문이 생성됩니다.")
+        
+        # 영업가족 선택 (공문용)
+        doc_agent = st.selectbox("📄 공문 출력 대상 영업가족", all_families, key="doc_agent_select")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            report_dept = st.text_input("발급 부서", value="지원센터")
+            report_date = st.date_input("문서 일자", datetime.now())
+        with col2:
+            report_recipient = st.text_input("수신", value=doc_agent if doc_agent else "")
+            
+        if st.button("🖨️ 해당 영업가족 공문 생성 (PDF)", use_container_width=True, type="primary"):
+            with st.spinner("📄 공문 생성 중..."):
+                try:
+                    buf = generate_agent_report(
+                        df_sel, df_targets, doc_agent, sel_months, 
+                        "M스캔 목표관리 현황 안내", report_dept, 
+                        report_date.strftime("%Y년 %m월 %d일"), report_recipient
+                    )
+                    st.download_button(
+                        label="📥 PDF 다운로드",
+                        data=buf,
+                        file_name=f"공문_{doc_agent}_{report_date.strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                    st.success("✅ 공문이 생성되었습니다.")
+                except Exception as e:
+                    st.error(f"❌ 공문 생성 오류: {e}")
 
     # ==========================================
     # 탭 4: 가이드 & 프로세스
@@ -669,99 +751,7 @@ def dashboard_page():
         st.download_button("Excel 저장", buf, f"M스캔_현황_{datetime.now().strftime('%Y%m%d')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ==========================================
-# 7. 공문형식 리포트 생성 함수
-# ==========================================
-def generate_official_report(df_sel, df_targets, sel_months, title, dept, date_str, recipient):
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    import io
-    
-    try:
-        pdfmetrics.registerFont(TTFont('NotoSansKR', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
-        font_name = 'NotoSansKR'
-    except:
-        try:
-            pdfmetrics.registerFont(TTFont('NanumGothic', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'))
-            font_name = 'NanumGothic'
-        except:
-            font_name = 'Helvetica'
-    
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Korean', fontName=font_name, fontSize=10))
-    styles.add(ParagraphStyle(name='Title', fontName=font_name, fontSize=16, bold=True, alignment=1))
-    styles.add(ParagraphStyle(name='Subtitle', fontName=font_name, fontSize=12, bold=True))
-    styles.add(ParagraphStyle(name='Small', fontName=font_name, fontSize=8))
-    
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
-    elements = []
-    
-    elements.append(Paragraph(title, styles['Title']))
-    elements.append(Spacer(1, 10*mm))
-    
-    header_data = [['문서번호:', f'{dept}-{datetime.now().strftime("%Y%m%d")}-001'], ['발급일자:', date_str], ['수신:', recipient], ['발신:', dept]]
-    header_table = Table(header_data, colWidths=[40*mm, 80*mm])
-    header_table.setStyle(TableStyle([('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9), ('ALIGN', (0, 0), (0, -1), 'LEFT'), ('ALIGN', (1, 0), (1, -1), 'LEFT'), ('BOTTOMPADDING', (0, 0), (-1, -1), 6)]))
-    elements.append(header_table)
-    elements.append(Spacer(1, 10*mm))
-    
-    elements.append(Paragraph("【목적】", styles['Subtitle']))
-    elements.append(Paragraph("본 문서는 영업가족별 M스캔 목표관리 현황을 공유하고, 모바일동의(M스캔)의 중요성과 활용 방안을 안내하기 위해 작성되었습니다.", styles['Korean']))
-    elements.append(Spacer(1, 5*mm))
-    
-    elements.append(Paragraph("【목표관리 현황】", styles['Subtitle']))
-    if not df_targets.empty and "영업가족" in df_sel.columns:
-        actual_stats = build_org_stats(df_sel, sel_months, ["영업가족"], "누적")
-        merged_df = actual_stats.merge(df_targets, on="영업가족", how="left")
-        merged_df["M스캔율_목표"] = merged_df["M스캔율_목표"].fillna(0)
-        merged_df["M스캔율_달성율"] = ((merged_df["M스캔율_대상"] / merged_df["M스캔율_목표"].replace(0, float('nan'))) * 100).round(1).fillna(0)
-        merged_df = merged_df.sort_values("M스캔율_달성율", ascending=False)
-        
-        table_data = [['영업가족', '대상건', 'M스캔건', 'M스캔율(실제)', 'M스캔율(목표)', '달성율', '특이사항']]
-        for _, row in merged_df.head(15).iterrows():
-            table_data.append([row['영업가족'], f"{int(row['대상건']):,}", f"{int(row['M스캔건']):,}", f"{row['M스캔율_대상']:.1f}%", f"{row['M스캔율_목표']:.1f}%", f"{row['M스캔율_달성율']:.1f}%", row.get('특이사항', '')[:20] + "..." if len(row.get('특이사항', '')) > 20 else row.get('특이사항', '')])
-        
-        table = Table(table_data, colWidths=[35*mm, 18*mm, 18*mm, 22*mm, 22*mm, 18*mm, 27*mm])
-        table.setStyle(TableStyle([('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7), ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
-        elements.append(table)
-    else:
-        elements.append(Paragraph("목표 데이터가 없습니다.", styles['Small']))
-    
-    elements.append(Spacer(1, 10*mm))
-    elements.append(Paragraph("【모바일동의(M스캔)의 중요성】", styles['Subtitle']))
-    for reason in MOBILE_GUIDE["reasons"]: elements.append(Paragraph(f"• {reason}", styles['Korean']))
-    elements.append(Spacer(1, 5*mm))
-    elements.append(Paragraph("【필수 서류 4종】", styles['Subtitle']))
-    elements.append(Paragraph("계약 체결 전 아래 4종 서류 100% 완비가 필수입니다.", styles['Korean']))
-    
-    doc_table_data = [['No.', '서류명', '법적근거']]
-    for i, doc in enumerate(GUIDANCE_DOCS[1:], 1): doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
-    doc_table = Table(doc_table_data, colWidths=[10*mm, 50*mm, 60*mm])
-    doc_table.setStyle(TableStyle([('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8), ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E75B6')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('VALIGN', (0, 0), (-1, -1), 'TOP')]))
-    elements.append(doc_table)
-    
-    elements.append(Spacer(1, 10*mm))
-    elements.append(Paragraph("【요청사항】", styles['Subtitle']))
-    elements.append(Paragraph("1. 설정된 목표를 반드시 달성하여 주시기 바랍니다.", styles['Korean']))
-    elements.append(Paragraph("2. 모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.", styles['Korean']))
-    elements.append(Paragraph("3. 2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.", styles['Korean']))
-    
-    elements.append(Spacer(1, 15*mm))
-    elements.append(Paragraph(f"{dept}", styles['Korean']))
-    elements.append(Spacer(1, 5*mm))
-    elements.append(Paragraph(f"문서책임자: _________________ (인)", styles['Small']))
-    
-    doc.build(elements)
-    buf.seek(0)
-    return buf
-
-# ==========================================
-# 8. Main
+# 7. Main
 # ==========================================
 def main():
     if not st.session_state.get("logged_in"):
@@ -773,7 +763,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.3 | 상위/하위필터 | 목표저장안정화 | 공문출력")
+            st.caption("v14.4 | 전사평균월별 | 라벨수정 | 목표관리재설계 | 공문최적화")
         dashboard_page()
 
 if __name__ == "__main__":
