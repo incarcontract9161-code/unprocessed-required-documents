@@ -131,7 +131,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수 (KeyError 해결 적용)
+# 3. 목표 관리 함수
 # ==========================================
 @st.cache_data(ttl=60)
 def load_targets():
@@ -197,7 +197,7 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
     return agg_df
 
 # ==========================================
-# 4. 목표 자동배분 함수 (✅ KeyError 완벽 해결)
+# 4. 목표 자동배분 함수
 # ==========================================
 def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     if df_actual.empty or "영업가족" not in df_actual.columns:
@@ -243,36 +243,27 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
             "M스캔율_목표": target_rate,
             "대상건_목표": target_volume,
             "배분사유": reason,
-            "특이사항": ""  # 기본값 명시
+            "특이사항": ""
         })
     
-    # ✅ 안전한 병합 로직 적용
     result = actual_stats.apply(calc_target, axis=1)
-    
-    # 결과 데이터프레임 생성 (특이사항 컬럼 보장)
     final_df = pd.concat([
         actual_stats[["영업가족", "대상건", "M스캔건", "현재_실적율"]].reset_index(drop=True),
         result.reset_index(drop=True)
     ], axis=1)
     
-    # 기존 데이터와 병합 시 특이사항 컬럼 처리
     if not df_existing.empty and "영업가족" in df_existing.columns:
-        # 기존 데이터에서 영업가족과 특이사항만 추출
         if "특이사항" in df_existing.columns:
             existing_special = df_existing[["영업가족", "특이사항"]].copy()
         else:
             existing_special = df_existing[["영업가족"]].copy()
             existing_special["특이사항"] = ""
             
-        # 왼쪽 조인으로 기존 특이사항 유지
         final_df = final_df.merge(existing_special, on="영업가족", how="left")
-        # 빈 값 채우기
         final_df["특이사항"] = final_df["특이사항"].fillna("")
     else:
-        # 기존 데이터가 없으면 빈 문자열로 초기화
         final_df["특이사항"] = ""
     
-    # 필요한 컬럼만 반환
     return final_df[["영업가족", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]]
 
 # ==========================================
@@ -584,7 +575,7 @@ def dashboard_page():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력
+    # 탭 3: 목표관리 & 공문출력 (✅ StreamlitAPIException 해결)
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -648,21 +639,23 @@ def dashboard_page():
                 }
                 
                 df_editor = pd.DataFrame([edit_data])
-                df_editor["대상건"] = df_editor["대상건"].astype(int)
-                df_editor["M스캔건"] = df_editor["M스캔건"].astype(int)
-                df_editor["M스캔율_대상"] = df_editor["M스캔율_대상"].astype(float)
-                df_editor["M스캔율_목표"] = df_editor["M스캔율_목표"].astype(float)
-                df_editor["대상건_목표"] = df_editor["대상건_목표"].astype(int)
+                
+                # ✅ StreamlitAPIException 해결: 명시적 타입 변환 및 column_config 단순화
+                df_editor["대상건"] = pd.to_numeric(df_editor["대상건"], errors="coerce").fillna(0).astype(int)
+                df_editor["M스캔건"] = pd.to_numeric(df_editor["M스캔건"], errors="coerce").fillna(0).astype(int)
+                df_editor["M스캔율_대상"] = pd.to_numeric(df_editor["M스캔율_대상"], errors="coerce").fillna(0.0)
+                df_editor["M스캔율_목표"] = pd.to_numeric(df_editor["M스캔율_목표"], errors="coerce").fillna(0.0)
+                df_editor["대상건_목표"] = pd.to_numeric(df_editor["대상건_목표"], errors="coerce").fillna(0).astype(int)
                 
                 edited_df = st.data_editor(
                     df_editor,
                     column_config={
                         "영업가족": st.column_config.TextColumn("영업가족", disabled=True),
-                        "대상건": st.column_config.NumberColumn("실제 대상건", disabled=True, step=1),
-                        "M스캔건": st.column_config.NumberColumn("실제 M스캔건", disabled=True, step=1),
-                        "M스캔율_대상": st.column_config.NumberColumn("실제 M스캔율(%)", disabled=True, step=0.1, format="%.1f%%"),
-                        "M스캔율_목표": st.column_config.NumberColumn("목표 M스캔율(%)", min_value=0, max_value=100, step=0.5, format="%.1f%%"),
-                        "대상건_목표": st.column_config.NumberColumn("목표 대상건", min_value=0, step=10),
+                        "대상건": st.column_config.NumberColumn("실제 대상건", disabled=True),
+                        "M스캔건": st.column_config.NumberColumn("실제 M스캔건", disabled=True),
+                        "M스캔율_대상": st.column_config.NumberColumn("실제 M스캔율(%)", disabled=True),
+                        "M스캔율_목표": st.column_config.NumberColumn("목표 M스캔율(%)", min_value=0, max_value=100),
+                        "대상건_목표": st.column_config.NumberColumn("목표 대상건", min_value=0),
                         "배분사유": st.column_config.TextColumn("배분사유", disabled=True),
                         "특이사항": st.column_config.TextColumn("특이사항 (공문 포함)", max_chars=100)
                     },
@@ -695,7 +688,7 @@ def dashboard_page():
                             st.success("✅ 수정된 목표가 저장되었습니다.")
                             st.rerun()
                         else:
-                            st.error("❌ 저장 패")
+                            st.error("❌ 저장 실")
                             
                 with col2:
                     if st.button("📥 현재 편집 데이터 다운로드", use_container_width=True):
@@ -705,7 +698,7 @@ def dashboard_page():
                         st.download_button("📥 편집파일 다운로드", data=buf, file_name=f"편집_{selected_agent}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                         
                 with col3:
-                    if st.button("🖨️ 선택 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
+                    if st.button("🖨️ 선 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 buf = generate_agent_report_pdf(
@@ -794,7 +787,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.8 | KeyError해결 | 목표자동배분저장 | 공문수정생성")
+            st.caption("v14.7 | StreamlitType호환성해결 | 목표자동배분저장 | 공문수정생성")
         dashboard_page()
 
 if __name__ == "__main__":
