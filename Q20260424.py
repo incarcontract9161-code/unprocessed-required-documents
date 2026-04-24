@@ -83,7 +83,6 @@ def load_data():
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
 
-        # ✅ 컬럼명 공백 제거 (KeyError 방지)
         df.columns = df.columns.str.strip()
 
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
@@ -183,9 +182,7 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
         M스캔건=("M스캔건", "sum")
     ).reset_index()
 
-    # ✅ 집계 결과 컬럼명 공백 제거
     agg_df.columns = agg_df.columns.str.strip()
-
     agg_df["M스캔율_대상"] = safe_rate(agg_df["M스캔건"], agg_df["대상건"])
     agg_df["M스캔율_완료"] = safe_rate(agg_df["M스캔건"], agg_df["전체스캔건"])
 
@@ -278,14 +275,10 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
             font_name = 'Helvetica'
     
     styles = getSampleStyleSheet()
-    if 'CustTitle' not in styles:
-        styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1))
-    if 'CustSubtitle' not in styles:
-        styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=12, bold=True))
-    if 'KoreanText' not in styles:
-        styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=10))
-    if 'SmallText' not in styles:
-        styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8))
+    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1))
+    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=12, bold=True))
+    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=10))
+    if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8))
         
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
@@ -294,18 +287,9 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
     elements.append(Paragraph(title, styles['CustTitle']))
     elements.append(Spacer(1, 8*mm))
     
-    header_data = [
-        ['문서번호:', f'{dept}-{datetime.now().strftime("%Y%m%d")}-001'],
-        ['발급일자:', date_str],
-        ['수신:', recipient],
-        ['발신:', dept]
-    ]
+    header_data = [['문서번호:', f'{dept}-{datetime.now().strftime("%Y%m%d")}-001'], ['발급일자:', date_str], ['수신:', recipient], ['발신:', dept]]
     header_table = Table(header_data, colWidths=[40*mm, 80*mm])
-    header_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('ALIGN', (0, 0), (0, -1), 'LEFT'), ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6)
-    ]))
+    header_table.setStyle(TableStyle([('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9), ('ALIGN', (0, 0), (0, -1), 'LEFT'), ('ALIGN', (1, 0), (1, -1), 'LEFT'), ('BOTTOMPADDING', (0, 0), (-1, -1), 6)]))
     elements.append(header_table)
     elements.append(Spacer(1, 8*mm))
     
@@ -320,7 +304,6 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
     diff = actual_rate - target_rate
     special_note = agent_data.get('특이사항', '')
     
-    # ✅ SyntaxError 수정: f-string 따옴표 종결
     status_data = [
         ['지표', '목표', '실적', '차이'],
         ['M스캔율', f"{target_rate:.1f}%", f"{actual_rate:.1f}%", f"{diff:+.1f}%"],
@@ -586,7 +569,7 @@ def dashboard_page():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력
+    # 탭 3: 목표관리 & 공문출력 (✅ StreamlitAPIException 해결)
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -649,13 +632,21 @@ def dashboard_page():
                     "특이사항": agent_target_row["특이사항"].iloc[0] if not agent_target_row.empty else ""
                 }
                 
+                # ✅ 명시적 타입 캐스팅으로 Streamlit 호환성 해결
+                df_editor = pd.DataFrame([edit_data])
+                df_editor["대상건"] = df_editor["대상건"].astype(int)
+                df_editor["M스캔건"] = df_editor["M스캔건"].astype(int)
+                df_editor["M스캔율_대상"] = df_editor["M스캔율_대상"].astype(float)
+                df_editor["M스캔율_목표"] = df_editor["M스캔율_목표"].astype(float)
+                df_editor["대상건_목표"] = df_editor["대상건_목표"].astype(int)
+                
                 edited_df = st.data_editor(
-                    pd.DataFrame([edit_data]),
+                    df_editor,
                     column_config={
                         "영업가족": st.column_config.TextColumn("영업가족", disabled=True),
-                        "대상건": st.column_config.NumberColumn("실제 대상건", disabled=True),
-                        "M스캔건": st.column_config.NumberColumn("실제 M스캔건", disabled=True),
-                        "M스캔율_대상": st.column_config.NumberColumn("실제 M스캔율(%)", disabled=True),
+                        "대상건": st.column_config.NumberColumn("실제 대상건", disabled=True, step=1),
+                        "M스캔건": st.column_config.NumberColumn("실제 M스캔건", disabled=True, step=1),
+                        "M스캔율_대상": st.column_config.NumberColumn("실제 M스캔율(%)", disabled=True, step=0.1, format="%.1f%%"),
                         "M스캔율_목표": st.column_config.NumberColumn("목표 M스캔율(%)", min_value=0, max_value=100, step=0.5, format="%.1f%%"),
                         "대상건_목표": st.column_config.NumberColumn("목표 대상건", min_value=0, step=10),
                         "배분사유": st.column_config.TextColumn("배분사유", disabled=True),
@@ -700,7 +691,7 @@ def dashboard_page():
                         st.download_button("📥 편집파일 다운로드", data=buf, file_name=f"편집_{selected_agent}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                         
                 with col3:
-                    if st.button("🖨️ 선 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
+                    if st.button("🖨️ 선택 영업가족 공문 생성(PDF)", use_container_width=True, type="primary"):
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 buf = generate_agent_report_pdf(
@@ -789,7 +780,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.6 | SyntaxError해결 | 목표자동배분저장 | 공문수정생성")
+            st.caption("v14.7 | StreamlitType호환성해결 | 목표자동배분저장 | 공문수정생성")
         dashboard_page()
 
 if __name__ == "__main__":
