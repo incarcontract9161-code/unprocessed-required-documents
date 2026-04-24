@@ -131,7 +131,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수 (계층 집계 지원)
+# 3. 목표 관리 함수 (✅ KeyError 및 병합 로직 수정)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_targets():
@@ -198,7 +198,7 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
     return agg_df
 
 # ==========================================
-# 4. 목표 자동배분 함수 (✅ 부서/총괄/부문 집계 추가)
+# 4. 목표 자동배분 함수 (✅ KeyError 해결)
 # ==========================================
 def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     if df_actual.empty or "영업가족" not in df_actual.columns:
@@ -244,7 +244,6 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
             })
         return pd.DataFrame(results)
 
-    # 각 조직 단계별 목표 생성
     df_fam = calc_targets_for_group(df_actual, "영업가족", "영업가족")
     df_dept = calc_targets_for_group(df_actual, "부서", "부서")
     df_tg = calc_targets_for_group(df_actual, "총괄", "총괄")
@@ -252,18 +251,27 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
 
     all_targets = pd.concat([df_fam, df_dept, df_tg, df_bm], ignore_index=True)
 
-    # 기존 특이사항 유지 (조직명 기준 매핑)
+    # ✅ FIX 1: 컬럼 존재 여부 확인 및 생성 (KeyError 방지)
+    required_cols = ["조직단계", "조직명", "M스캔율_목표", "대상건_목표", "배분사유", "특이사항"]
+    for col in required_cols:
+        if col not in all_targets.columns:
+            all_targets[col] = ""
+            
+    # ✅ FIX 2: 기존 특이사항 안전한 매핑 (Merge 충돌 방지)
     if not df_existing.empty and "조직명" in df_existing.columns and "특이사항" in df_existing.columns:
-        existing_notes = df_existing[["조직명", "특이사항"]].copy()
-        all_targets = all_targets.merge(existing_notes, on="조직명", how="left")
-        all_targets["특이사항"] = all_targets["특이사항"].fillna("")
+        notes_map = dict(zip(df_existing["조직명"], df_existing["특이사항"]))
+        # 조직명이 매칭되는 경우에만 기존 특이사항 적용, 없으면 공백 유지
+        all_targets["특이사항"] = all_targets["조직명"].map(notes_map).fillna(all_targets["특이사항"])
     else:
-        all_targets["특이사항"] = ""
+        # 기존 데이터가 없거나 특이사항 컬럼이 없으면 빈 문자열로 초기화
+        if "특이사항" not in all_targets.columns:
+            all_targets["특이사항"] = ""
+        all_targets["특이사항"] = all_targets["특이사항"].fillna("")
 
-    return all_targets
+    return all_targets[required_cols]
 
 # ==========================================
-# 5. 공문 생성 함수 (✅ f-string 문법 오류 수정)
+# 5. 공문 생성 함수
 # ==========================================
 def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_str, recipient):
     try:
@@ -306,7 +314,6 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
     diff = actual_rate - target_rate
     special_note = agent_data.get('특이사항', '')
     
-    # ✅ SyntaxError 수정: f-string 종료 따옴표 보완
     status_data = [
         ['지표', '목표', '실적', '차이'],
         ['M스캔율', f"{target_rate:.1f}%", f"{actual_rate:.1f}%", f"{diff:+.1f}%"],
@@ -401,12 +408,6 @@ def dashboard_page():
     df_sel = df[df[month_col].isin(sel_months)].copy()
     if df_sel.empty: st.info("선택한 기간에 데이터가 없습니다."); return
 
-    total_docs = int(df_sel["대상건"].sum())
-    total_scanned = int(df_sel["전체스캔건"].sum())
-    m_scanned = int(df_sel["M스캔건"].sum())
-    avg_rate_target = safe_rate(pd.Series([m_scanned]), pd.Series([total_docs])).iloc[0]
-    avg_rate_scan = safe_rate(pd.Series([m_scanned]), pd.Series([total_scanned])).iloc[0]
-
     st.divider()
 
     tab_dash, tab_map, tab_target, tab_guide, tab_manual = st.tabs([
@@ -415,7 +416,7 @@ def dashboard_page():
     ])
 
     # ==========================================
-    # 탭 1: 현황 대시보드
+    # 탭 1: 현황 대시보드 (✅ 전사평균 동적 계산 적용)
     # ==========================================
     with tab_dash:
         ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1, 1])
@@ -441,6 +442,24 @@ def dashboard_page():
 
         is_target = "대상대비" in rate_type
         rate_col = "M스캔율_대상" if is_target else "M스캔율_완료"
+        
+        # ✅ FIX 3: view_mode에 따른 전사평균 동적 계산
+        total_docs_dash = int(df_sel["대상건"].sum())
+        total_scanned_dash = int(df_sel["전체스캔건"].sum())
+        m_scanned_dash = int(df_sel["M스캔건"].sum())
+        
+        if view_mode == "월별":
+            # 월별 실적율의 평균 계산
+            monthly_stats = df_sel.groupby("월_피리어드").agg(
+                M스캔건=("M스캔건", "sum"),
+                대상건=("대상건", "sum")
+            )
+            monthly_stats["rate"] = safe_rate(monthly_stats["M스캔건"], monthly_stats["대상건"])
+            avg_rate_target = monthly_stats["rate"].mean()
+        else:
+            # 누적 전체 실적율 계산
+            avg_rate_target = safe_rate(pd.Series([m_scanned_dash]), pd.Series([total_docs_dash])).iloc[0]
+
         target_val = round(avg_rate_target * 1.1, 1)
         baseline_val = avg_rate_target if "평균" in compare_type else target_val
         baseline_label = "전사 평균" if "평균" in compare_type else "목표치(+10%)"
@@ -550,7 +569,10 @@ def dashboard_page():
         map_agg = df_sel.groupby(map_level).agg(agg_dict).reset_index()
         map_agg.columns = map_agg.columns.str.strip()
         map_agg["M스캔율_대상"] = safe_rate(map_agg["M스캔건"], map_agg["대상건"])
-        map_baseline = avg_rate_target if "평균" in map_compare else round(avg_rate_target * 1.1, 1)
+        
+        # ✅ FIX 4: 탭 맵에서는 누적 평균 사용 (view_mode 변수 접근 불가 방지)
+        avg_rate_target_cumulative = safe_rate(pd.Series([int(df_sel["M스캔건"].sum())]), pd.Series([int(df_sel["대상건"].sum())])).iloc[0]
+        map_baseline = avg_rate_target_cumulative if "평균" in map_compare else round(avg_rate_target_cumulative * 1.1, 1)
         map_agg["격차"] = map_agg["M스캔율_대상"] - map_baseline
         
         if map_min_target > 0: map_agg = map_agg[map_agg["대상건"] >= map_min_target].copy()
@@ -571,7 +593,7 @@ def dashboard_page():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력 (✅ 조직계층 집계 적용)
+    # 탭 3: 목표관리 & 공문출력
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -587,6 +609,7 @@ def dashboard_page():
 
         if st.button("🔄 자동배분 계산 (영업가족+부서+총괄+부문)", use_container_width=True, type="primary"):
             with st.spinner("🎯 실적규모 분석 및 목표 배분 중..."):
+                # ✅ FIX 5: KeyError가 발생하던 함수 호출 (내부 로직 수정됨)
                 new_targets = auto_allocate_targets(df_sel, df_targets, increase_rate=0.10)
                 if not new_targets.empty:
                     st.session_state["auto_targets"] = new_targets
@@ -615,13 +638,9 @@ def dashboard_page():
         st.markdown("### ② 조직별 목표 수정 & 공문 생성")
         st.caption("집계 기준을 선택하면 해당 수준의 목표를 확인하고 수정할 수 있습니다. 수정 후 바로 공문을 생성합니다.")
         
-        # ✅ 조직 단계 선택기 추가
-        org_level = st.radio("📊 집계 기준 선택", ["영업가족", "부서", "총괄", "부문"], horizontal=True, key="target_org_level")
-        
-        # 선택한 수준의 데이터 필터링
+        org_level = st.radio("📊 집계 기준 택", ["영업가족", "부서", "총괄", "부문"], horizontal=True, key="target_org_level")
         level_targets = df_targets[df_targets["조직단계"] == org_level].copy() if not df_targets.empty else pd.DataFrame()
         
-        # 신규 생성 시 기본값 설정
         if level_targets.empty and "auto_targets" not in st.session_state:
             unique_orgs = sorted(df_sel[org_level].dropna().unique())
             level_targets = pd.DataFrame({
@@ -634,7 +653,6 @@ def dashboard_page():
             })
 
         if not level_targets.empty:
-            # 데이터 에디터 준비 (타입 안전화)
             df_editor = level_targets.copy()
             df_editor["M스캔율_목표"] = pd.to_numeric(df_editor["M스캔율_목표"], errors="coerce").fillna(0.0)
             df_editor["대상건_목표"] = pd.to_numeric(df_editor["대상건_목표"], errors="coerce").fillna(0).astype(int)
@@ -657,7 +675,6 @@ def dashboard_page():
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("💾 수정사항 목표 파일에 저장", use_container_width=True):
-                    # 기존 데이터에서 현재 수준 제거 후 새 데이터 추가
                     updated_targets = df_targets[df_targets["조직단계"] != org_level].copy()
                     updated_targets = pd.concat([updated_targets, edited_df], ignore_index=True)
                     
@@ -685,7 +702,7 @@ def dashboard_page():
                                 agent_actual = agent_stats[agent_stats[org_level] == selected_agent]
                                 
                                 agent_data = {
-                                    "영업가족": selected_agent, # 공문에는 선택한 조직명 사용
+                                    "영업가족": selected_agent,
                                     "M스캔율_대상": float(agent_actual["M스캔율_대상"].iloc[0]) if not agent_actual.empty else 0,
                                     "M스캔율_목표": float(agent_row["M스캔율_목표"]),
                                     "대상건": int(agent_actual["대상건"].iloc[0]) if not agent_actual.empty else 0,
