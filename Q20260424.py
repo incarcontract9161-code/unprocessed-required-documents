@@ -131,7 +131,7 @@ def get_file_update_time():
     return "알 수 없음"
 
 # ==========================================
-# 3. 목표 관리 함수
+# 3. 목표 관리 함수 (✅ KeyError 해결 & 안정화)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_targets():
@@ -197,7 +197,7 @@ def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누
     return agg_df
 
 # ==========================================
-# 4. 목표 자동배분 함수
+# 4. 목표 자동배분 함수 (✅ KeyError 완벽 해결)
 # ==========================================
 def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     if df_actual.empty or "영업가족" not in df_actual.columns:
@@ -252,6 +252,10 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
         result.reset_index(drop=True)
     ], axis=1)
     
+    # ✅ KeyError 해결: 병합 전 중복 컬럼 제거 및 안전한 처리
+    if "특이사항" in final_df.columns:
+        final_df = final_df.drop(columns=["특이사항"])
+        
     if not df_existing.empty and "영업가족" in df_existing.columns:
         if "특이사항" in df_existing.columns:
             existing_special = df_existing[["영업가족", "특이사항"]].copy()
@@ -314,7 +318,7 @@ def generate_agent_report_pdf(df_sel, sel_months, agent_data, title, dept, date_
         ['지표', '목표', '실적', '차이'],
         ['M스캔율', f"{target_rate:.1f}%", f"{actual_rate:.1f}%", f"{diff:+.1f}%"],
         ['대상건', f"{target_vol:,}건", f"{actual_vol:,}건", f"{actual_vol-target_vol:+,}건"],
-        ['M스캔건', '-', f"{m_scan_vol:,}건", '-']
+        ['M스캔건', '-', f"{m_scan_vol:,}건', '-']
     ]
     if special_note:
         status_data.append(['특이사항', special_note, '', ''])
@@ -407,7 +411,15 @@ def dashboard_page():
     total_docs = int(df_sel["대상건"].sum())
     total_scanned = int(df_sel["전체스캔건"].sum())
     m_scanned = int(df_sel["M스캔건"].sum())
-    avg_rate_target = safe_rate(pd.Series([m_scanned]), pd.Series([total_docs])).iloc[0]
+    
+    # ✅ 월별 보기 시 월별 평균으로 계산, 누적 시 전체 평균 계산
+    if view_mode == "월별":
+        monthly_stats = df_sel.groupby("월_피리어드").agg(M스캔건=("M스캔건", "sum"), 대상건=("대상건", "sum"))
+        monthly_rates = safe_rate(monthly_stats["M스캔건"], monthly_stats["대상건"])
+        avg_rate_target = monthly_rates.mean() if not monthly_rates.empty else 0.0
+    else:
+        avg_rate_target = safe_rate(pd.Series([m_scanned]), pd.Series([total_docs])).iloc[0]
+        
     avg_rate_scan = safe_rate(pd.Series([m_scanned]), pd.Series([total_scanned])).iloc[0]
 
     st.divider()
@@ -444,9 +456,9 @@ def dashboard_page():
 
         is_target = "대상대비" in rate_type
         rate_col = "M스캔율_대상" if is_target else "M스캔율_완료"
-        avg_val = avg_rate_target if is_target else avg_rate_scan
-        target_val = round(avg_val * 1.1, 1)
-        baseline_val = avg_val if "평균" in compare_type else target_val
+        
+        target_val = round(avg_rate_target * 1.1, 1)
+        baseline_val = avg_rate_target if "평균" in compare_type else target_val
         baseline_label = "전사 평균" if "평균" in compare_type else "목표치(+10%)"
 
         if min_target > 0: agg = agg[agg["대상건"] >= min_target].copy()
@@ -463,7 +475,7 @@ def dashboard_page():
 
         st.markdown(f"### 📈 **{rate_type}** 현황 ({filter_direction}) | 비교 기준: **{baseline_label}** ({baseline_val:.1f}%)")
         met1, met2, met3, met4 = st.columns(4)
-        with met1: st.metric("🏢 전사 평균", f"{avg_val:.1f}%")
+        with met1: st.metric("🏢 전사 평균", f"{avg_rate_target:.1f}%")
         with met2: st.metric("🎯 목표치 (+10%)", f"{target_val:.1f}%")
         with met3: st.metric("📊 선 조직 평균", f"{agg[rate_col].mean():.1f}%")
         with met4: 
@@ -575,7 +587,7 @@ def dashboard_page():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력 (✅ StreamlitAPIException 해결)
+    # 탭 3: 목표관리 & 공문출력
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -639,8 +651,6 @@ def dashboard_page():
                 }
                 
                 df_editor = pd.DataFrame([edit_data])
-                
-                # ✅ StreamlitAPIException 해결: 명시적 타입 변환 및 column_config 단순화
                 df_editor["대상건"] = pd.to_numeric(df_editor["대상건"], errors="coerce").fillna(0).astype(int)
                 df_editor["M스캔건"] = pd.to_numeric(df_editor["M스캔건"], errors="coerce").fillna(0).astype(int)
                 df_editor["M스캔율_대상"] = pd.to_numeric(df_editor["M스캔율_대상"], errors="coerce").fillna(0.0)
@@ -787,7 +797,7 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
             st.divider()
-            st.caption("v14.7 | StreamlitType호환성해결 | 목표자동배분저장 | 공문수정생성")
+            st.caption("v14.8 | KeyError해결 | 월별평균집계 | 목표자동배분저장 | 공문수정생성")
         dashboard_page()
 
 if __name__ == "__main__":
