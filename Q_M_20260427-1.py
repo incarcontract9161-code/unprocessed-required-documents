@@ -305,13 +305,13 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         pdf_elements.append(special_table)
 
     # ✅ FA별 이용현황 집계 (df_sel 전달 시 공문 하단에 통합 출력)
-    # 조건: df_sel이 전달되었고, '사번' 컬럼이 존재해야 함
-    if df_sel is not None and "사번" in df_sel.columns:
+    # 조건: df_sel이 전달되었고, '담당자사번' 컬럼이 존재해야 함
+    if df_sel is not None and "담당자사번" in df_sel.columns:
         pdf_elements.append(Spacer(1, 5*mm))
         pdf_elements.append(Paragraph("【FA별 M스캔 이용현황 집계】", styles['CustSubtitle']))
         
-        # FA사번별 집계
-        fa_stats = df_sel.groupby("사번").agg(
+        # FA담당자사번별 집계
+        fa_stats = df_sel.groupby("담당자사번").agg(
             총대상건=("대상건", "sum"),
             총M스캔건=("M스캔건", "sum")
         ).reset_index()
@@ -726,8 +726,8 @@ def dashboard_page():
             st.session_state.edited_doc_df = edited_df
             
             # ✅ FA 컬럼 체크 및 경고
-            if "사번" not in df_sel.columns:
-                st.warning("⚠️ 엑셀 데이터에 '사번' 컬럼이 없어 FA별 집계 항목이 공문에 포함되지 않습니다.")
+            if "담당자사번" not in df_sel.columns:
+                st.warning("⚠️ 엑셀 데이터에 '담당자사번' 컬럼이 없어 FA별 집계 항목이 공문에 포함되지 않습니다.")
             
             col1, col2, col3 = st.columns(3)
             with col1:
