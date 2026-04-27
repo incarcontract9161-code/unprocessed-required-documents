@@ -24,7 +24,7 @@ import numpy as np
 st.set_page_config(page_title="M스캔 전용 서류 처리 대시보드", layout="wide", page_icon="📊")
 
 # ==========================================
-# 1. 전역 설정 & 가이드 내용 (매뉴얼 내용 통합)
+# 1. 전역 설정 & 가이드 내용
 # ==========================================
 EXCEL_FILE = "insurance_data.xlsx"
 TARGET_FILE = "target_settings.xlsx"
@@ -190,7 +190,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. 공문 생성 함수 (✅ 1페이지 레이아웃, 그래프 축소, 표 크기 조정, 중복 제거)
+# 4. 공문 생성 함수 (✅ 1페이지 레이아웃, 공문느낌 개선)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -213,7 +213,8 @@ def generate_agent_report_pdf(title, dept, sender_name, date_str, recipient, tab
     if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1, spaceAfter=3*mm))
     if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, spaceAfter=2*mm))
     if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, spaceAfter=1.5*mm))
-    if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=9, spaceAfter=2*mm))
+    # ✅ 공문 하단 발신자 스타일 추가 (크게, 가운데)
+    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=14, bold=True, alignment=1, spaceAfter=10*mm))
         
     pdf_buffer = io.BytesIO()
     # ✅ 마진 축소로 한 페이지 공간 확보
@@ -263,9 +264,7 @@ def generate_agent_report_pdf(title, dept, sender_name, date_str, recipient, tab
     
     pdf_elements.append(Spacer(1, 2*mm))
     pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
-    # ✅ 법적근거 표 크기 확대 (3번째 컬럼 30% 증가, 전체 너비 조정)
-    # 기존 [15, 60, 60] -> 3번째가 60. 30% 증가는 18. 78mm.
-    # 총 너비 [12, 50, 78] = 140mm (A4 가용폭 180mm 내 여유 있게 배치)
+    # ✅ 법적근거 표 크기 확대
     doc_table_data = [['No.', '서류명', '법적근거']]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
         doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
@@ -285,7 +284,7 @@ def generate_agent_report_pdf(title, dept, sender_name, date_str, recipient, tab
     for i in range(1, 4):
         pdf_elements.append(Paragraph(f"{i}. {['설정된 목표를 반드시 달성하여 주시기 바랍니다.', '모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.', '2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.'][i-1]}", styles['KoreanText']))
     
-    # ✅ 특이사항 처리: 내용이 없으면 행 제거, 있으면 병합
+    # ✅ 특이사항 처리
     if special_notes and str(special_notes).strip() and str(special_notes).lower() != 'nan':
         pdf_elements.append(Spacer(1, 2*mm))
         special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[145*mm])
@@ -301,11 +300,12 @@ def generate_agent_report_pdf(title, dept, sender_name, date_str, recipient, tab
         ]))
         pdf_elements.append(special_table)
     
-    pdf_elements.append(Spacer(1, 5*mm))
-    pdf_elements.append(Paragraph(f"{dept}", styles['KoreanText']))
-    # ✅ 담당자 인(印) 제거 - 발신자만 수기 입력 가능하도록
+    # ✅ 공문 하단: 발신자 (직인생략) - 크게, 가운데 정렬
+    pdf_elements.append(Spacer(1, 15*mm))
+    sender_footer = f"{sender_name if sender_name else '지원센터'} (직인생략)"
+    pdf_elements.append(Paragraph(sender_footer, styles['SenderStyle']))
     
-    # ✅ 중복되는 별첨(가이드, 프로세스) 제거 - 1페이지 레이아웃 확보
+    # ✅ 중복되는 별첨 제거 (1페이지 유지)
     
     pdf_doc.build(pdf_elements)
     pdf_buffer.seek(0)
@@ -656,10 +656,15 @@ def dashboard_page():
             st.dataframe(pd.DataFrame(preview_data).set_index("구분").T, use_container_width=True)
 
     # ==========================================
-    # 탭 4: 가이드 & 프로세스 (✅ 화면 보이는대로 출력 가능하도록 expander 기본 확장)
+    # 탭 4: 가이드 & 프로세스 (✅ 화면 출력 기능 추가)
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
+        
+        # ✅ 화면 출력 버튼
+        if st.button("🖨️ 현재 화면 출력", key="guide_print_btn"):
+            st.markdown('<script>window.print()</script>', unsafe_allow_html=True)
+        
         # ✅ expander를 기본으로 expanded=True 로 설정하여 화면에 바로 보이게 함 (출력 용이)
         for step in PROCESS_FLOW:
             with st.expander(f"🔹 Step {step['step']}: {step['title']}", expanded=True): st.markdown(step["desc"])
@@ -696,7 +701,7 @@ def main():
             st.success("👋 접속 완료")
             if st.button("🚪 로그아웃", use_container_width=True): st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v15.4 | 공문1페이지완성 | 중복제거 | 그래프축소 | 법적근거확대 | 가이드확장")
+            st.caption("v15.5 | 공문하단센터정렬 | 직인생략 | 가이드출력기능")
         dashboard_page()
 
 if __name__ == "__main__":
