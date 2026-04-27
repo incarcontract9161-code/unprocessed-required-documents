@@ -84,7 +84,7 @@ def load_data():
     try:
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.str.strip() # 컬럼명 공백 제거
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         for col in ["FA고지", "비교설명", "완전판매"]:
@@ -305,6 +305,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         pdf_elements.append(special_table)
 
     # ✅ FA별 이용현황 집계 (df_sel 전달 시 공문 하단에 통합 출력)
+    # 조건: df_sel이 전달되었고, 'FA사번' 컬럼이 존재해야 함
     if df_sel is not None and "FA사번" in df_sel.columns:
         pdf_elements.append(Spacer(1, 5*mm))
         pdf_elements.append(Paragraph("【FA별 M스캔 이용현황 집계】", styles['CustSubtitle']))
@@ -344,6 +345,80 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(Spacer(1, 10*mm))
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
     pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
+    
+    pdf_doc.build(pdf_elements)
+    pdf_buffer.seek(0)
+    return pdf_buffer
+
+def generate_guide_pdf():
+    try:
+        pdfmetrics.registerFont(TTFont('NotoSansKR', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
+        font_name = 'NotoSansKR'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('NanumGothic', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'))
+            font_name = 'NanumGothic'
+        except:
+            font_name = 'Helvetica'
+    
+    styles = getSampleStyleSheet()
+    if 'GuideTitle' not in styles: styles.add(ParagraphStyle(name='GuideTitle', fontName=font_name, fontSize=14, bold=True, alignment=1, spaceAfter=3*mm))
+    if 'GuideSubtitle' not in styles: styles.add(ParagraphStyle(name='GuideSubtitle', fontName=font_name, fontSize=10, bold=True, spaceAfter=1*mm))
+    if 'GuideText' not in styles: styles.add(ParagraphStyle(name='GuideText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
+        
+    pdf_buffer = io.BytesIO()
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
+    pdf_elements = []
+    
+    pdf_elements.append(Paragraph("📱 모바일동의(M스캔) 가이드 & 프로세스 요약", styles['GuideTitle']))
+    
+    # 필수 서류 4종
+    doc_table_data = [['No.', '서류명', '법적근거']]
+    for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
+        doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
+    
+    doc_table = Table(doc_table_data, colWidths=[12*mm, 50*mm, 70*mm])
+    doc_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3)
+    ]))
+    pdf_elements.append(doc_table)
+    pdf_elements.append(Spacer(1, 2*mm))
+    
+    # 프로세스
+    pdf_elements.append(Paragraph("🔄 모바일가입확인서 발송 및 결재 프로세스", styles['GuideSubtitle']))
+    process_rows = []
+    for step in PROCESS_FLOW:
+        process_rows.append([Paragraph(f"Step {step['step']}", styles['GuideText']), Paragraph(f"{step['title']}: {step['desc']}", styles['GuideText'])])
+        
+    process_table = Table(process_rows, colWidths=[20*mm, 140*mm])
+    process_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(process_table)
+    pdf_elements.append(Spacer(1, 2*mm))
+    
+    # FAQ
+    pdf_elements.append(Paragraph("❓ 자주 묻는 질문(FAQ) 및 안내", styles['GuideSubtitle']))
+    faq_items = []
+    for q, a in MOBILE_GUIDE["faq"]:
+        faq_items.append([Paragraph(f"Q. {q}", styles['GuideText']), Paragraph(f"A. {a}", styles['GuideText'])])
+    for reason in MOBILE_GUIDE["reasons"]:
+        faq_items.append([Paragraph("💡 안내", styles['GuideText']), Paragraph(reason, styles['GuideText'])])
+        
+    faq_table = Table(faq_items, colWidths=[30*mm, 130*mm])
+    faq_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F4F6F7')]),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(faq_table)
     
     pdf_doc.build(pdf_elements)
     pdf_buffer.seek(0)
@@ -650,6 +725,10 @@ def dashboard_page():
             
             st.session_state.edited_doc_df = edited_df
             
+            # ✅ FA 컬럼 체크 및 경고
+            if "FA사번" not in df_sel.columns:
+                st.warning("⚠️ 엑셀 데이터에 'FA사번' 컬럼이 없어 FA별 집계 항목이 공문에 포함되지 않습니다.")
+            
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("💾 수정사항 저장", use_container_width=True):
@@ -664,13 +743,11 @@ def dashboard_page():
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 d = st.session_state.edited_doc_df.iloc[0]
-                                # ✅ 목표달성을 위해 추가로 필요한 건수 계산
                                 target_rate = d['목표_M스캔율']
                                 actual_vol = d['실제_대상건']
                                 additional_needed = int(np.ceil(actual_vol * target_rate / 100)) - d['실제_M스캔건']
                                 if additional_needed < 0: additional_needed = 0
                                 
-                                # ✅ 공문 표에 목표달성필요건수 및 특이사항 Nan 처리 추가
                                 table_data = [
                                     ['지표', '목표', '현황', '차이'],
                                     ['M스캔율', f"{d['목표_M스캔율']:.1f}%", f"{d['실제_M스캔율']:.1f}%", f"{d['실제_M스캔율']-d['목표_M스캔율']:+.1f}%"],
@@ -679,7 +756,6 @@ def dashboard_page():
                                     ['목표달성필요', f"{additional_needed:,}건 추가필요", '-', '-']
                                 ]
                                 
-                                # 특이사항 Nan 처리
                                 special_notes = d['특이사항']
                                 if pd.isna(special_notes) or str(special_notes).lower() == 'nan':
                                     special_notes = ""
@@ -732,8 +808,15 @@ def dashboard_page():
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
+        # ✅ 가이드 PDF 저장 버튼 정상 작동 수정
         if st.button("📄 가이드/프로세스 PDF 저장 (1페이지)", use_container_width=True, type="primary"):
-            pass
+            with st.spinner("PDF 생성 중..."):
+                try:
+                    guide_buf = generate_guide_pdf()
+                    st.download_button("📥 가이드 PDF 다운로드", data=guide_buf, file_name=f"M스캔_가이드프로세스_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
+                    st.success("✅ 가이드 PDF가 생성되었습니다.")
+                except Exception as e:
+                    st.error(f"❌ 가이드 PDF 생성 오류: {e}")
 
         for step in PROCESS_FLOW:
             with st.expander(f"🔹 Step {step['step']}: {step['title']}", expanded=True): st.markdown(step["desc"])
