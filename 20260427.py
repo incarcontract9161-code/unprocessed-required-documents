@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -190,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수들 (개선됨)
+# 4. PDF 생성 함수들 (수신/참조, 제목 왼쪽 정렬 수정)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -210,15 +211,17 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             font_name = 'Helvetica'
     
     styles = getSampleStyleSheet()
-    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1, spaceAfter=3*mm))
-    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, spaceAfter=2*mm))
-    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, spaceAfter=1.5*mm))
+    # ✅ 수정: alignment=0 (TA_LEFT)로 변경하여 왼쪽 정렬
+    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=0, spaceAfter=3*mm))
+    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=0, spaceAfter=2*mm))
+    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=0, spaceAfter=1.5*mm))
     if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=1, spaceAfter=2*mm))
         
     pdf_buffer = io.BytesIO()
     pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     pdf_elements = []
     
+    # ✅ 수신/참조 왼쪽 정렬 (Table 사용)
     header_table = Table([['수신: ' + receiver], ['참조: ' + reference]])
     header_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), font_name), 
@@ -583,7 +586,7 @@ def dashboard_page():
             st.dataframe(map_agg[[map_level, "대상건", "M스캔건", "M스캔율_대상", "격차"]].style.format({"대상건":"{:,}", "M스캔건":"{:,}", "M스캔율_대상":"{:.1f}%", "격차":"{:+.1f}%"}), use_container_width=True, hide_index=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력 (✅ StreamlitAPIException 해결)
+    # 탭 3: 목표관리 & 공문출력
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -628,35 +631,27 @@ def dashboard_page():
             unique_orgs = sorted(df_sel[org_level].dropna().unique())
             level_targets = pd.DataFrame({"조직단계": org_level, "조직명": unique_orgs, "M스캔율_목표": 50.0, "배분사유": "신규등록", "특이사항": ""})
 
-        # ✅ Callback function for auto-filling receiver safely
         def auto_fill_receiver():
             agent = st.session_state.get("select_agent_for_doc", "")
             receiver = st.session_state.get("receiver_input", "선택 조직명")
-            # Auto-fill only if receiver is default or empty
             if receiver == "선택 조직명" or receiver == "":
                 st.session_state.receiver_input = agent
 
-        # ✅ 공문 정보 입력 필드
         st.subheader("📝 공문 정보 입력")
         info_col1, info_col2 = st.columns(2)
         with info_col1:
-            # 1. Agent Selection (Placed first with callback to update receiver)
             selected_agent = st.selectbox(
                 "📄 공문 생성 대상 선택", 
                 level_targets["조직명"].tolist(), 
                 key="select_agent_for_doc",
                 on_change=auto_fill_receiver
             )
-            
-            # 2. Receiver Input
             receiver_input = st.text_input("📥 수신 (수신자)", value="선택 조직명", key="receiver_input")
             reference_input = st.text_input("📎 참조 (참조자)", value="", key="reference_input")
-            
         with info_col2:
             sender_dept_input = st.text_input("🏢 발신 (부서/조직)", value="지원센터", key="sender_dept_input")
             dispatcher_input = st.text_input("✍️ 발송인 (담당자/성명)", value="", key="dispatcher_input")
 
-        # Logic to fetch agent data based on selected_agent
         if selected_agent:
             agent_row = level_targets[level_targets["조직명"] == selected_agent].iloc[0].copy()
             agent_stats = build_org_stats(df_sel, sel_months, [org_level], "누적")
