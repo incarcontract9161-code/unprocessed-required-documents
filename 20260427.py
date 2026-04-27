@@ -213,15 +213,21 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1, spaceAfter=3*mm))
     if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, spaceAfter=2*mm))
     if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, spaceAfter=1.5*mm))
-    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=2, spaceAfter=2*mm)) # 우측 정렬
+    # ✅ 하단 발송자 스타일: 가운데 정렬
+    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=1, spaceAfter=2*mm))
         
     pdf_buffer = io.BytesIO()
     pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     pdf_elements = []
     
-    # ✅ 헤더: 수신 / 참조
-    header_table = Table([['수신: ' + receiver, '참조: ' + reference]], colWidths=[85*mm, 85*mm])
-    header_table.setStyle(TableStyle([('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 10), ('ALIGN', (0, 0), (0, -1), 'LEFT'), ('ALIGN', (1, 0), (1, -1), 'RIGHT'), ('BOTTOMPADDING', (0, 0), (-1, -1), 4*mm)]))
+    # ✅ 헤더: 수신 / 참조 (왼쪽 정렬, 줄바꿈)
+    header_table = Table([['수신: ' + receiver], ['참조: ' + reference]])
+    header_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), 
+        ('FONTSIZE', (0, 0), (-1, -1), 10), 
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), 
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4*mm)
+    ]))
     pdf_elements.append(header_table)
     pdf_elements.append(Spacer(1, 4*mm))
     
@@ -235,7 +241,6 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         fig = go.Figure()
         fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
         fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
-        # ✅ 기준일자 추가
         fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
         fig.update_layout(barmode='group', height=100, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
         img_bytes = fig_to_png_bytes(fig, width=400, height=100, scale=2)
@@ -300,16 +305,16 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ]))
         pdf_elements.append(special_table)
     
-    # ✅ 하단: 발신 부서 및 발송인 (담당자)
+    # ✅ 하단: 발신 부서 및 발송인 (담당자) - 가운데 정렬, 직인생략 추가
     pdf_elements.append(Spacer(1, 15*mm))
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
-    pdf_elements.append(Paragraph(f"발송인: {dispatcher_name}", styles['SenderStyle']))
+    pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
     
     pdf_doc.build(pdf_elements)
     pdf_buffer.seek(0)
     return pdf_buffer
 
-# ✅ 가이드/프로세스 PDF 생성 함수
+# ✅ 가이드/프로세스 PDF 생성 함수 (1페이지 요약 양식)
 def generate_guide_pdf():
     try:
         pdfmetrics.registerFont(TTFont('NotoSansKR', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
@@ -322,44 +327,67 @@ def generate_guide_pdf():
             font_name = 'Helvetica'
     
     styles = getSampleStyleSheet()
-    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=1, spaceAfter=5*mm))
-    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=12, bold=True, spaceAfter=3*mm))
-    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=10, spaceAfter=2*mm))
+    if 'GuideTitle' not in styles: styles.add(ParagraphStyle(name='GuideTitle', fontName=font_name, fontSize=14, bold=True, alignment=1, spaceAfter=3*mm))
+    if 'GuideSubtitle' not in styles: styles.add(ParagraphStyle(name='GuideSubtitle', fontName=font_name, fontSize=10, bold=True, spaceAfter=1*mm))
+    if 'GuideText' not in styles: styles.add(ParagraphStyle(name='GuideText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
         
     pdf_buffer = io.BytesIO()
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
+    # ✅ 마진 최소화하여 한 페이지에 담기
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
     pdf_elements = []
     
-    pdf_elements.append(Paragraph("📱 모바일동의(M스캔) 가이드 & 프로세스", styles['CustTitle']))
-    pdf_elements.append(Spacer(1, 5*mm))
+    # 1. 제목
+    pdf_elements.append(Paragraph("📱 모바일동의(M스캔) 가이드 & 프로세스 요약", styles['GuideTitle']))
     
-    pdf_elements.append(Paragraph("🔄 모바일가입확인서 발송 및 결재 프로세스", styles['CustSubtitle']))
-    for step in PROCESS_FLOW:
-        pdf_elements.append(Paragraph(f"**Step {step['step']}: {step['title']}**", styles['CustSubtitle']))
-        pdf_elements.append(Paragraph(step["desc"], styles['KoreanText']))
-        pdf_elements.append(Spacer(1, 2*mm))
-        
-    pdf_elements.append(PageBreak())
-    pdf_elements.append(Paragraph("❓ 자주 묻는 질문(FAQ)", styles['CustSubtitle']))
-    for q, a in MOBILE_GUIDE["faq"]:
-        pdf_elements.append(Paragraph(f"**Q. {q}**", styles['KoreanText']))
-        pdf_elements.append(Paragraph(f"A. {a}", styles['KoreanText']))
-        pdf_elements.append(Spacer(1, 2*mm))
-    
-    pdf_elements.append(Paragraph("📝 책임판매 필수 서류 4종", styles['CustSubtitle']))
+    # 2. 필수 서류 4종 (상단 배치)
     doc_table_data = [['No.', '서류명', '법적근거']]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
         doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
     
-    doc_table = Table(doc_table_data, colWidths=[15*mm, 55*mm, 70*mm])
+    doc_table = Table(doc_table_data, colWidths=[12*mm, 50*mm, 70*mm])
     doc_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4)
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3)
     ]))
     pdf_elements.append(doc_table)
+    pdf_elements.append(Spacer(1, 2*mm))
+    
+    # 3. 발송 절차 (Process)
+    pdf_elements.append(Paragraph("🔄 모바일가입확인서 발송 및 결재 프로세스", styles['GuideSubtitle']))
+    
+    process_rows = []
+    for step in PROCESS_FLOW:
+        process_rows.append([Paragraph(f"Step {step['step']}", styles['GuideText']), Paragraph(f"{step['title']}: {step['desc']}", styles['GuideText'])])
+        
+    process_table = Table(process_rows, colWidths=[20*mm, 140*mm])
+    process_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(process_table)
+    pdf_elements.append(Spacer(1, 2*mm))
+    
+    # 4. FAQ 및 안내
+    pdf_elements.append(Paragraph("❓ 자주 묻는 질문(FAQ) 및 안내", styles['GuideSubtitle']))
+    
+    faq_items = []
+    for q, a in MOBILE_GUIDE["faq"]:
+        faq_items.append([Paragraph(f"Q. {q}", styles['GuideText']), Paragraph(f"A. {a}", styles['GuideText'])])
+    for reason in MOBILE_GUIDE["reasons"]:
+        faq_items.append([Paragraph("💡 안내", styles['GuideText']), Paragraph(reason, styles['GuideText'])])
+        
+    faq_table = Table(faq_items, colWidths=[30*mm, 130*mm])
+    faq_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F4F6F7')]),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(faq_table)
     
     pdf_doc.build(pdf_elements)
     pdf_buffer.seek(0)
@@ -566,7 +594,7 @@ def dashboard_page():
             st.dataframe(map_agg[[map_level, "대상건", "M스캔건", "M스캔율_대상", "격차"]].style.format({"대상건":"{:,}", "M스캔건":"{:,}", "M스캔율_대상":"{:.1f}%", "격차":"{:+.1f}%"}), use_container_width=True, hide_index=True)
 
     # ==========================================
-    # 탭 3: 목표관리 & 공문출력 (✅ 수신/참조/발신/발송인 분리 입력)
+    # 탭 3: 목표관리 & 공문출력
     # ==========================================
     with tab_target:
         st.subheader("🎯 목표 관리 & 공문 출력 워크플로우")
@@ -623,7 +651,6 @@ def dashboard_page():
 
         selected_agent = st.selectbox("📄 공문 생성 대상 선택", level_targets["조직명"].tolist(), key="select_agent_for_doc")
         if selected_agent:
-            # 수신자 기본값 업데이트
             if receiver_input == "선택 조직명" or receiver_input == "":
                 st.session_state.receiver_input = selected_agent
 
@@ -671,7 +698,6 @@ def dashboard_page():
                         with st.spinner("📄 공문 생성 중..."):
                             try:
                                 d = st.session_state.edited_doc_df.iloc[0]
-                                # ✅ PDF 테이블 데이터: 실적을 현황으로 변경
                                 table_data = [
                                     ['지표', '목표', '현황', '차이'],
                                     ['M스캔율', f"{d['목표_M스캔율']:.1f}%", f"{d['실제_M스캔율']:.1f}%", f"{d['실제_M스캔율']-d['목표_M스캔율']:+.1f}%"],
@@ -679,13 +705,12 @@ def dashboard_page():
                                     ['M스캔건', '-', f"{d['실제_M스캔건']:,}건", '-']
                                 ]
                                 
-                                # ✅ 분리된 입력값으로 PDF 생성
                                 pdf_buf = generate_agent_report_pdf(
                                     f"M스캔 목표관리 현황 안내 ({org_level})", 
-                                    st.session_state.receiver_input, # 수신
-                                    st.session_state.reference_input, # 참조
-                                    st.session_state.sender_dept_input, # 발신 부서
-                                    st.session_state.dispatcher_input, # 발송인
+                                    st.session_state.receiver_input, 
+                                    st.session_state.reference_input, 
+                                    st.session_state.sender_dept_input, 
+                                    st.session_state.dispatcher_input, 
                                     datetime.now().strftime("%Y년 %m월 %d일"), 
                                     d['조직명'], 
                                     table_data, 
@@ -700,7 +725,6 @@ def dashboard_page():
                 else:
                     st.button("🖨️ 공문 생성 (PDF)", use_container_width=True, type="primary", disabled=True)
 
-        # ✅ 미리보기 섹션
         if st.session_state.doc_preview_ready and "edited_doc_df" in st.session_state and not st.session_state.edited_doc_df.empty:
             st.divider()
             st.markdown("#### 📄 공문 미리보기")
@@ -724,17 +748,13 @@ def dashboard_page():
             st.dataframe(pd.DataFrame(preview_data).set_index("구분").T, use_container_width=True)
 
     # ==========================================
-    # 탭 4: 가이드 & 프로세스 (✅ PDF 출력 버튼 추가)
+    # 탭 4: 가이드 & 프로세스 (✅ PDF 저장, 화면출력 제거)
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
         
-        # ✅ 화면 출력 버튼 (브라우저 인쇄)
-        if st.button("🖨️ 현재 화면 출력", key="guide_print_btn"):
-            st.markdown('<script>window.print()</script>', unsafe_allow_html=True)
-            
         # ✅ 가이드 PDF 저장 버튼
-        if st.button("📄 가이드/프로세스 PDF 저장", use_container_width=True):
+        if st.button("📄 가이드/프로세스 PDF 저장 (1페이지)", use_container_width=True, type="primary"):
             with st.spinner("PDF 생성 중..."):
                 try:
                     guide_buf = generate_guide_pdf()
@@ -778,7 +798,7 @@ def main():
             st.success("👋 접속 완료")
             if st.button("🚪 로그아웃", use_container_width=True): st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v15.6 | 수신/참조/발신/발송인분리 | 기준일자추가 | 가이드PDF저장")
+            st.caption("v15.7 | 가이드1페이지PDF | 수신참조좌측줄바꿈 | 발송자중앙정렬")
         dashboard_page()
 
 if __name__ == "__main__":
