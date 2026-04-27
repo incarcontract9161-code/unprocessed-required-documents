@@ -84,7 +84,7 @@ def load_data():
     try:
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.str.strip() # 컬럼명 공백 제거
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         for col in ["FA고지", "비교설명", "완전판매"]:
@@ -191,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수 (FA현황 최상단 배치 + 평균 로직 변경)
+# 4. PDF 생성 함수 (FA현황 최상단 배치 + 컬럼 자동 탐색 로직)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -218,7 +218,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
         
     pdf_buffer = io.BytesIO()
-    # 마진 축소
+    # 마진 축소 (한 페이지 출력용)
     pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
     pdf_elements = []
     
@@ -238,12 +238,24 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(Paragraph(f"【대상 조직】 {recipient_name}", styles['CustSubtitle']))
     pdf_elements.append(Spacer(1, 2*mm))
 
-    # ✅ FA별 이용현황 집계 (가장 먼저 배치)
-    if df_sel is not None and "FA사번" in df_sel.columns:
+    # ✅ FA별 이용현황 집계 (로직 개선: 컬럼명 유연 탐색 + P열 fallback)
+    fa_col = None
+    if df_sel is not None:
+        # 1. 컬럼명 탐색 ("FA사번", "사번", "FA" 등이 포함되었는지 확인)
+        for col in df_sel.columns:
+            if "사번" in str(col) or "FA" in str(col).upper() or "AGENT" in str(col).upper():
+                fa_col = col
+                break
+        
+        # 2. 컬럼명을 찾지 못한 경우, 사용자의 설명(P열)에 따라 16번째 컬럼(index 15)을 사번으로 간주
+        if fa_col is None and len(df_sel.columns) >= 16:
+            fa_col = df_sel.columns[15]
+
+    if fa_col:
         pdf_elements.append(Paragraph("【FA별 M스캔 이용현황 집계】", styles['CustSubtitle']))
         
         # FA사번별 집계
-        fa_stats = df_sel.groupby("FA사번").agg(
+        fa_stats = df_sel.groupby(fa_col).agg(
             총대상건=("대상건", "sum"),
             총M스캔건=("M스캔건", "sum")
         ).reset_index()
@@ -255,7 +267,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         not_using_fa = total_fa - using_fa
         using_rate = (using_fa / total_fa * 100) if total_fa > 0 else 0
         
-        # ✅ 평균 M스캔율 (사용자만 대상)
+        # ✅ 평균 M스캔율 (실제로 이용한 FA들만의 평균)
         using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0]
         if not using_fa_stats.empty:
             avg_m_scan_rate = using_fa_stats["M스캔율"].mean()
@@ -285,7 +297,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
         fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
         fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
-        # ✅ 차트 높이 축소 (100mm -> 80mm)
+        # 차트 높이 축소 (한 페이지 출력용)
         fig.update_layout(barmode='group', height=80, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
         img_bytes = fig_to_png_bytes(fig, width=400, height=80, scale=2)
         if img_bytes:
@@ -772,7 +784,7 @@ def dashboard_page():
                                     special_notes, 
                                     d['실제_M스캔율'], 
                                     d['목표_M스캔율'],
-                                    df_sel=df_sel
+                                    df_sel=df_sel  # ✅ FA현황 통합을 위해 전달
                                 )
                                 st.download_button("📥 PDF 다운로드", data=pdf_buf, file_name=f"공문_{d['조직명']}_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
                                 st.success("✅ 공문이 생성되었습니다.")
@@ -808,8 +820,15 @@ def dashboard_page():
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
+        # ✅ 가이드 PDF 저장 버튼 정상 작동 수정
         if st.button("📄 가이드/프로세스 PDF 저장 (1페이지)", use_container_width=True, type="primary"):
-            pass
+            with st.spinner("PDF 생성 중..."):
+                try:
+                    guide_buf = generate_guide_pdf()
+                    st.download_button("📥 가이드 PDF 다운로드", data=guide_buf, file_name=f"M스캔_가이드프로세스_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
+                    st.success("✅ 가이드 PDF가 생성되었습니다.")
+                except Exception as e:
+                    st.error(f"❌ 가이드 PDF 생성 오류: {e}")
 
         for step in PROCESS_FLOW:
             with st.expander(f"🔹 Step {step['step']}: {step['title']}", expanded=True): st.markdown(step["desc"])
