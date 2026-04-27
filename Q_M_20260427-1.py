@@ -84,7 +84,7 @@ def load_data():
     try:
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
-        df.columns = df.columns.str.strip() # 컬럼명 공백 제거
+        df.columns = df.columns.str.strip()
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         for col in ["FA고지", "비교설명", "완전판매"]:
@@ -191,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수 (FA현황 최상단 배치 + 컬럼 자동 탐색 로직)
+# 4. PDF 생성 함수 (레이아웃 최적화 및 FA 집계표 위치/내용 수정)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -236,18 +236,46 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(Spacer(1, 2*mm))
     
     pdf_elements.append(Paragraph(f"【대상 조직】 {recipient_name}", styles['CustSubtitle']))
-    pdf_elements.append(Spacer(1, 2*mm))
+    pdf_elements.append(Spacer(1, 3*mm))
 
-    # ✅ FA별 이용현황 집계 (로직 개선: 컬럼명 유연 탐색 + P열 fallback)
+    # 1. 대시보드 차트 (대상 조직 바로 아래)
+    try:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
+        fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
+        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
+        fig.update_layout(barmode='group', height=80, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
+        img_bytes = fig_to_png_bytes(fig, width=400, height=80, scale=2)
+        if img_bytes:
+            img = RLImage(io.BytesIO(img_bytes), width=120*mm, height=25*mm)
+            pdf_elements.append(img)
+            pdf_elements.append(Spacer(1, 2*mm))
+    except Exception:
+        pass
+        
+    # 2. 대시보드 표
+    status_table = Table(table_data, colWidths=[45*mm, 35*mm, 35*mm, 35*mm])
+    status_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ECF0F1'), colors.white]),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(status_table)
+
+    # ✅ 한 줄 간격 (Spacer) 추가
+    pdf_elements.append(Spacer(1, 4*mm))
+
+    # 3. FA별 이용현황 집계 (대시보드 바로 아래로 이동)
     fa_col = None
     if df_sel is not None:
-        # 1. 컬럼명 탐색 ("FA사번", "사번", "FA" 등이 포함되었는지 확인)
         for col in df_sel.columns:
             if "사번" in str(col) or "FA" in str(col).upper() or "AGENT" in str(col).upper():
                 fa_col = col
                 break
-        
-        # 2. 컬럼명을 찾지 못한 경우, 사용자의 설명(P열)에 따라 16번째 컬럼(index 15)을 사번으로 간주
         if fa_col is None and len(df_sel.columns) >= 16:
             fa_col = df_sel.columns[15]
 
@@ -267,18 +295,18 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         not_using_fa = total_fa - using_fa
         using_rate = (using_fa / total_fa * 100) if total_fa > 0 else 0
         
-        # ✅ 평균 M스캔율 (실제로 이용한 FA들만의 평균)
+        # ✅ 사용자 평균 M스캔율 (실제로 이용한 FA들만의 평균)
         using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0]
         if not using_fa_stats.empty:
             avg_m_scan_rate = using_fa_stats["M스캔율"].mean()
         else:
             avg_m_scan_rate = 0
         
-        # 집계 통계 표
+        # 집계 통계 표 (레이아웃 변경)
         stats_data = [
             ['총 FA 수', f'{total_fa}명', 'M스캔 사용 FA', f'{using_fa}명'],
             ['미사용 FA', f'{not_using_fa}명', 'FA 사용률', f'{using_rate:.1f}%'],
-            ['평균 M스캔율', f'{avg_m_scan_rate:.1f}%', '', '']
+            ['사용자 평균 M스캔율', f'{avg_m_scan_rate:.1f}%', '', '']
         ]
         stats_table = Table(stats_data, colWidths=[35*mm, 35*mm, 35*mm, 35*mm])
         stats_table.setStyle(TableStyle([
@@ -289,42 +317,17 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
         ]))
         pdf_elements.append(stats_table)
-    
-    pdf_elements.append(Spacer(1, 2*mm))
 
-    try:
-        fig = go.Figure()
-        fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
-        fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
-        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
-        # 차트 높이 축소 (한 페이지 출력용)
-        fig.update_layout(barmode='group', height=80, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
-        img_bytes = fig_to_png_bytes(fig, width=400, height=80, scale=2)
-        if img_bytes:
-            img = RLImage(io.BytesIO(img_bytes), width=120*mm, height=25*mm)
-            pdf_elements.append(img)
-            pdf_elements.append(Spacer(1, 1*mm))
-    except Exception:
-        pass
+    pdf_elements.append(Spacer(1, 3*mm))
         
-    status_table = Table(table_data, colWidths=[45*mm, 35*mm, 35*mm, 35*mm])
-    status_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ECF0F1'), colors.white]),
-        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
-    ]))
-    pdf_elements.append(status_table)
-    pdf_elements.append(Spacer(1, 1*mm))
-        
+    # 4. 가이드 텍스트
     pdf_elements.append(Paragraph("【모바일동의(M스캔) 안내】", styles['CustSubtitle']))
     for reason in MOBILE_GUIDE["reasons"]:
         pdf_elements.append(Paragraph(f"• {reason}", styles['KoreanText']))
     
     pdf_elements.append(Spacer(1, 1*mm))
+    
+    # 5. 필수 서류 4종
     pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
     doc_table_data = [['No.', '서류명', '법적근거']]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
@@ -341,6 +344,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(doc_table)
     pdf_elements.append(Spacer(1, 1*mm))
     
+    # 6. 요청사항
     pdf_elements.append(Paragraph("【요청사항】", styles['CustSubtitle']))
     for i in range(1, 4):
         pdf_elements.append(Paragraph(f"{i}. {['설정된 목표를 반드시 달성하여 주시기 바랍니다.', '모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.', '2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.'][i-1]}", styles['KoreanText']))
@@ -360,6 +364,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ]))
         pdf_elements.append(special_table)
     
+    # 7. 발신 정보 (중앙 정렬)
     pdf_elements.append(Spacer(1, 5*mm))
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
     pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
@@ -390,7 +395,6 @@ def generate_guide_pdf():
     
     pdf_elements.append(Paragraph("📱 모바일동의(M스캔) 가이드 & 프로세스 요약", styles['GuideTitle']))
     
-    # 필수 서류 4종
     doc_table_data = [['No.', '서류명', '법적근거']]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
         doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
@@ -406,7 +410,6 @@ def generate_guide_pdf():
     pdf_elements.append(doc_table)
     pdf_elements.append(Spacer(1, 2*mm))
     
-    # 프로세스
     pdf_elements.append(Paragraph("🔄 모바일가입확인서 발송 및 결재 프로세스", styles['GuideSubtitle']))
     process_rows = []
     for step in PROCESS_FLOW:
@@ -421,7 +424,6 @@ def generate_guide_pdf():
     pdf_elements.append(process_table)
     pdf_elements.append(Spacer(1, 2*mm))
     
-    # FAQ
     pdf_elements.append(Paragraph("❓ 자주 묻는 질문(FAQ) 및 안내", styles['GuideSubtitle']))
     faq_items = []
     for q, a in MOBILE_GUIDE["faq"]:
@@ -784,7 +786,7 @@ def dashboard_page():
                                     special_notes, 
                                     d['실제_M스캔율'], 
                                     d['목표_M스캔율'],
-                                    df_sel=df_sel  # ✅ FA현황 통합을 위해 전달
+                                    df_sel=df_sel
                                 )
                                 st.download_button("📥 PDF 다운로드", data=pdf_buf, file_name=f"공문_{d['조직명']}_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
                                 st.success("✅ 공문이 생성되었습니다.")
@@ -820,7 +822,6 @@ def dashboard_page():
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
-        # ✅ 가이드 PDF 저장 버튼 정상 작동 수정
         if st.button("📄 가이드/프로세스 PDF 저장 (1페이지)", use_container_width=True, type="primary"):
             with st.spinner("PDF 생성 중..."):
                 try:
