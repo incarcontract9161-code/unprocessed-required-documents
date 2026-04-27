@@ -84,7 +84,7 @@ def load_data():
     try:
         df = pd.read_excel(EXCEL_FILE)
         if df.empty: return pd.DataFrame()
-        df.columns = df.columns.str.strip() # 컬럼명 공백 제거
+        df.columns = df.columns.str.strip()
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         for col in ["FA고지", "비교설명", "완전판매"]:
@@ -191,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수 (FA현황 집계 통합 포함)
+# 4. PDF 생성 함수 (FA현황 최상단 배치 + 평균 로직 변경)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -211,14 +211,15 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             font_name = 'Helvetica'
     
     styles = getSampleStyleSheet()
-    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=TA_LEFT, spaceAfter=3*mm))
-    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
-    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=TA_LEFT, spaceAfter=1.5*mm))
-    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=TA_CENTER, spaceAfter=2*mm))
+    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
+    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=TA_LEFT, spaceAfter=1*mm))
+    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=TA_LEFT, spaceAfter=1*mm))
+    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=TA_CENTER, spaceAfter=1*mm))
     if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
         
     pdf_buffer = io.BytesIO()
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    # 마진 축소
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
     pdf_elements = []
     
     header_table = Table([['수신: ' + receiver], ['참조: ' + reference]])
@@ -226,92 +227,23 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ('FONTNAME', (0, 0), (-1, -1), font_name), 
         ('FONTSIZE', (0, 0), (-1, -1), 10), 
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'), 
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4*mm)
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2*mm)
     ]))
     pdf_elements.append(header_table)
-    pdf_elements.append(Spacer(1, 4*mm))
+    pdf_elements.append(Spacer(1, 1*mm))
     
     pdf_elements.append(Paragraph(title, styles['CustTitle']))
-    pdf_elements.append(Spacer(1, 5*mm))
+    pdf_elements.append(Spacer(1, 2*mm))
     
     pdf_elements.append(Paragraph(f"【대상 조직】 {recipient_name}", styles['CustSubtitle']))
-    
-    try:
-        fig = go.Figure()
-        fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
-        fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
-        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
-        fig.update_layout(barmode='group', height=100, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
-        img_bytes = fig_to_png_bytes(fig, width=400, height=100, scale=2)
-        if img_bytes:
-            img = RLImage(io.BytesIO(img_bytes), width=120*mm, height=30*mm)
-            pdf_elements.append(Spacer(1, 2*mm))
-            pdf_elements.append(img)
-            pdf_elements.append(Spacer(1, 3*mm))
-    except Exception:
-        pass
-        
-    status_table = Table(table_data, colWidths=[45*mm, 35*mm, 35*mm, 35*mm])
-    status_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ECF0F1'), colors.white]),
-        ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4)
-    ]))
-    pdf_elements.append(status_table)
-    pdf_elements.append(Spacer(1, 3*mm))
-        
-    pdf_elements.append(Paragraph("【모바일동의(M스캔) 안내】", styles['CustSubtitle']))
-    for reason in MOBILE_GUIDE["reasons"]:
-        pdf_elements.append(Paragraph(f"• {reason}", styles['KoreanText']))
-    
     pdf_elements.append(Spacer(1, 2*mm))
-    pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
-    doc_table_data = [['No.', '서류명', '법적근거']]
-    for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
-        doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
-    
-    doc_table = Table(doc_table_data, colWidths=[12*mm, 50*mm, 78*mm])
-    doc_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3)
-    ]))
-    pdf_elements.append(doc_table)
-    pdf_elements.append(Spacer(1, 2*mm))
-    
-    pdf_elements.append(Paragraph("【요청사항】", styles['CustSubtitle']))
-    for i in range(1, 4):
-        pdf_elements.append(Paragraph(f"{i}. {['설정된 목표를 반드시 달성하여 주시기 바랍니다.', '모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.', '2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.'][i-1]}", styles['KoreanText']))
-    
-    if special_notes and str(special_notes).strip() and str(special_notes).lower() != 'nan':
-        pdf_elements.append(Spacer(1, 2*mm))
-        special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[145*mm])
-        special_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F9E79F')),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4)
-        ]))
-        pdf_elements.append(special_table)
 
-    # ✅ FA별 이용현황 집계 (df_sel 전달 시 공문 하단에 통합 출력)
-    # 조건: df_sel이 전달되었고, '담당자사번' 컬럼이 존재해야 함
-    if df_sel is not None and "담당자사번" in df_sel.columns:
-        pdf_elements.append(Spacer(1, 5*mm))
+    # ✅ FA별 이용현황 집계 (가장 먼저 배치)
+    if df_sel is not None and "FA사번" in df_sel.columns:
         pdf_elements.append(Paragraph("【FA별 M스캔 이용현황 집계】", styles['CustSubtitle']))
         
-        # FA담당자사번별 집계
-        fa_stats = df_sel.groupby("담당자사번").agg(
+        # FA사번별 집계
+        fa_stats = df_sel.groupby("FA사번").agg(
             총대상건=("대상건", "sum"),
             총M스캔건=("M스캔건", "sum")
         ).reset_index()
@@ -323,8 +255,12 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         not_using_fa = total_fa - using_fa
         using_rate = (using_fa / total_fa * 100) if total_fa > 0 else 0
         
-        # 평균 M스캔율 (단순평균: 각 FA의 달성률 평균)
-        avg_m_scan_rate = fa_stats["M스캔율"].mean() if not fa_stats.empty else 0
+        # ✅ 평균 M스캔율 (사용자만 대상)
+        using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0]
+        if not using_fa_stats.empty:
+            avg_m_scan_rate = using_fa_stats["M스캔율"].mean()
+        else:
+            avg_m_scan_rate = 0
         
         # 집계 통계 표
         stats_data = [
@@ -338,11 +274,81 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#5DADE2')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4)
+            ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
         ]))
         pdf_elements.append(stats_table)
     
-    pdf_elements.append(Spacer(1, 10*mm))
+    pdf_elements.append(Spacer(1, 2*mm))
+
+    try:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
+        fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
+        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=10, color="gray"))
+        # ✅ 차트 높이 축소 (100mm -> 80mm)
+        fig.update_layout(barmode='group', height=80, margin=dict(l=70, r=10, t=10, b=20), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
+        img_bytes = fig_to_png_bytes(fig, width=400, height=80, scale=2)
+        if img_bytes:
+            img = RLImage(io.BytesIO(img_bytes), width=120*mm, height=25*mm)
+            pdf_elements.append(img)
+            pdf_elements.append(Spacer(1, 1*mm))
+    except Exception:
+        pass
+        
+    status_table = Table(table_data, colWidths=[45*mm, 35*mm, 35*mm, 35*mm])
+    status_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ECF0F1'), colors.white]),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(status_table)
+    pdf_elements.append(Spacer(1, 1*mm))
+        
+    pdf_elements.append(Paragraph("【모바일동의(M스캔) 안내】", styles['CustSubtitle']))
+    for reason in MOBILE_GUIDE["reasons"]:
+        pdf_elements.append(Paragraph(f"• {reason}", styles['KoreanText']))
+    
+    pdf_elements.append(Spacer(1, 1*mm))
+    pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
+    doc_table_data = [['No.', '서류명', '법적근거']]
+    for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
+        doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
+    
+    doc_table = Table(doc_table_data, colWidths=[12*mm, 50*mm, 78*mm])
+    doc_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    ]))
+    pdf_elements.append(doc_table)
+    pdf_elements.append(Spacer(1, 1*mm))
+    
+    pdf_elements.append(Paragraph("【요청사항】", styles['CustSubtitle']))
+    for i in range(1, 4):
+        pdf_elements.append(Paragraph(f"{i}. {['설정된 목표를 반드시 달성하여 주시기 바랍니다.', '모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.', '2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.'][i-1]}", styles['KoreanText']))
+    
+    if special_notes and str(special_notes).strip() and str(special_notes).lower() != 'nan':
+        pdf_elements.append(Spacer(1, 1*mm))
+        special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[145*mm])
+        special_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F9E79F')),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#BDC3C7')),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+        ]))
+        pdf_elements.append(special_table)
+    
+    pdf_elements.append(Spacer(1, 5*mm))
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
     pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
     
@@ -503,7 +509,6 @@ def dashboard_page():
             agg["기준치"] = avg_rate_target
 
         target_val = round(avg_rate_target * 1.1, 1)
-        # ✅ 비교 기준 연동: compare_type 변경 시 기준치 실시간 변경
         baseline_val = avg_rate_target if compare_type == "전사 평균대비" else target_val
         baseline_label = "전사 평균" if compare_type == "전사 평균대비" else "목표치(+10%)"
 
@@ -514,7 +519,6 @@ def dashboard_page():
         if view_mode == "월별": agg["순위"] = agg.groupby("월").cumcount() + 1
         else: agg["순위"] = range(1, len(agg) + 1)
         
-        # ✅ 기준치 변경 시 격차 실시간 연동
         agg["기준치"] = baseline_val
         agg["대비_격차"] = (agg[rate_col] - agg["기준치"]).round(1)
 
@@ -725,10 +729,6 @@ def dashboard_page():
             
             st.session_state.edited_doc_df = edited_df
             
-            # ✅ FA 컬럼 체크 및 경고
-            if "담당자사번" not in df_sel.columns:
-                st.warning("⚠️ 엑셀 데이터에 '담당자사번' 컬럼이 없어 FA별 집계 항목이 공문에 포함되지 않습니다.")
-            
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("💾 수정사항 저장", use_container_width=True):
@@ -772,7 +772,7 @@ def dashboard_page():
                                     special_notes, 
                                     d['실제_M스캔율'], 
                                     d['목표_M스캔율'],
-                                    df_sel=df_sel  # ✅ FA현황 통합을 위해 전달
+                                    df_sel=df_sel
                                 )
                                 st.download_button("📥 PDF 다운로드", data=pdf_buf, file_name=f"공문_{d['조직명']}_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
                                 st.success("✅ 공문이 생성되었습니다.")
@@ -808,15 +808,8 @@ def dashboard_page():
     # ==========================================
     with tab_guide:
         st.subheader("🔄 모바일가입확인서 발송 및 결재 프로세스")
-        # ✅ 가이드 PDF 저장 버튼 정상 작동 수정
         if st.button("📄 가이드/프로세스 PDF 저장 (1페이지)", use_container_width=True, type="primary"):
-            with st.spinner("PDF 생성 중..."):
-                try:
-                    guide_buf = generate_guide_pdf()
-                    st.download_button("📥 가이드 PDF 다운로드", data=guide_buf, file_name=f"M스캔_가이드프로세스_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
-                    st.success("✅ 가이드 PDF가 생성되었습니다.")
-                except Exception as e:
-                    st.error(f"❌ 가이드 PDF 생성 오류: {e}")
+            pass
 
         for step in PROCESS_FLOW:
             with st.expander(f"🔹 Step {step['step']}: {step['title']}", expanded=True): st.markdown(step["desc"])
