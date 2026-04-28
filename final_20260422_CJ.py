@@ -1159,7 +1159,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
 # 11. UI – 단일 비밀번호 로그인
 # ==========================================
 def login_page():
-    st.title("🔐 시스템 접속")
+    st.title("🔐 신계약 필수서류 스캔 현황 시스템 접속")
     st.markdown("**단일 비밀번호**로 접속합니다.")
     pwd = st.text_input("접속 비밀번호를 입력하세요", type="password")
     if st.button("접속하기", use_container_width=True, type="primary"):
