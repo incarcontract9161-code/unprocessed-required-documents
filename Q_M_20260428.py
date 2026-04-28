@@ -608,73 +608,373 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     return pdf_buffer
 
 def generate_guide_pdf():
+    # ── 폰트 등록 ────────────────────────────────────────────────
     try:
-        pdfmetrics.registerFont(TTFont('NotoSansKR', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
+        pdfmetrics.registerFont(TTFont('NotoSansKR',      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'))
+        pdfmetrics.registerFont(TTFont('NotoSansKR-Bold', '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'))
         font_name = 'NotoSansKR'
+        font_bold = 'NotoSansKR-Bold'
     except:
         try:
             pdfmetrics.registerFont(TTFont('NanumGothic', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'))
             font_name = 'NanumGothic'
+            font_bold = 'NanumGothic'
         except:
             font_name = 'Helvetica'
-    
+            font_bold = 'Helvetica-Bold'
+
+    # ── 색상 팔레트 (공문과 동일 체계) ──────────────────────────
+    C_HEADER     = colors.HexColor('#1B3A6B')   # 진남색
+    C_SUBHDR     = colors.HexColor('#2E5FA3')   # 중간 파랑
+    C_ACCENT     = colors.HexColor('#1F618D')   # 강조 파랑
+    C_ROW_ODD    = colors.HexColor('#EBF5FB')   # 홀수행 연파랑
+    C_ROW_EVEN   = colors.white
+    C_BORDER     = colors.HexColor('#AEB6BF')
+    C_SEC_BG     = colors.HexColor('#EAF0FB')   # 섹션헤더 배경
+    C_WHITE      = colors.white
+    C_STEP_BG    = [
+        colors.HexColor('#1B3A6B'),  # Step1 진남
+        colors.HexColor('#2471A3'),  # Step2
+        colors.HexColor('#2E86C1'),  # Step3
+        colors.HexColor('#3498DB'),  # Step4 밝은파랑
+        colors.HexColor('#5DADE2'),  # Step5 연파랑
+    ]
+    C_WARN_BG    = colors.HexColor('#FEF9E7')
+    C_WARN_BDR   = colors.HexColor('#F0B429')
+    C_FAQ_Q_BG   = colors.HexColor('#EBF5FB')
+    C_FAQ_A_BG   = colors.HexColor('#F8FBFF')
+    C_DO_BG      = colors.HexColor('#EAFAF1')
+    C_DO_BDR     = colors.HexColor('#27AE60')
+    C_CAUTION_BG = colors.HexColor('#FDEDEC')
+    C_CAUTION_BDR= colors.HexColor('#E74C3C')
+
+    # ── 스타일 정의 ───────────────────────────────────────────────
     styles = getSampleStyleSheet()
-    if 'GuideTitle' not in styles: styles.add(ParagraphStyle(name='GuideTitle', fontName=font_name, fontSize=14, bold=True, alignment=1, spaceAfter=3*mm))
-    if 'GuideSubtitle' not in styles: styles.add(ParagraphStyle(name='GuideSubtitle', fontName=font_name, fontSize=10, bold=True, spaceAfter=1*mm))
-    if 'GuideText' not in styles: styles.add(ParagraphStyle(name='GuideText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
-        
+    def add_style(name, **kw):
+        if name not in styles:
+            styles.add(ParagraphStyle(name=name, **kw))
+
+    add_style('GTitle',    fontName=font_bold, fontSize=16, alignment=TA_CENTER, spaceAfter=0,   leading=22, textColor=C_HEADER)
+    add_style('GSubDate',  fontName=font_name, fontSize=8,  alignment=TA_CENTER, spaceAfter=0,   leading=12, textColor=colors.HexColor('#7F8C8D'))
+    add_style('GSecHdr',   fontName=font_bold, fontSize=9,  alignment=TA_LEFT,   spaceAfter=0,   leading=14, textColor=C_HEADER)
+    add_style('GBody',     fontName=font_name, fontSize=8,  alignment=TA_LEFT,   spaceAfter=0,   leading=12)
+    add_style('GBodyBold', fontName=font_bold, fontSize=8,  alignment=TA_LEFT,   spaceAfter=0,   leading=12, textColor=C_ACCENT)
+    add_style('GStepNum',  fontName=font_bold, fontSize=10, alignment=TA_CENTER, spaceAfter=0,   leading=14, textColor=C_WHITE)
+    add_style('GStepTitle',fontName=font_bold, fontSize=8,  alignment=TA_LEFT,   spaceAfter=0,   leading=13, textColor=C_HEADER)
+    add_style('GStepDesc', fontName=font_name, fontSize=7.5,alignment=TA_LEFT,   spaceAfter=0,   leading=11, textColor=colors.HexColor('#2C3E50'))
+    add_style('GFaqQ',     fontName=font_bold, fontSize=8,  alignment=TA_LEFT,   spaceAfter=0,   leading=12, textColor=C_ACCENT)
+    add_style('GFaqA',     fontName=font_name, fontSize=7.5,alignment=TA_LEFT,   spaceAfter=0,   leading=11, textColor=colors.HexColor('#2C3E50'))
+    add_style('GDoItem',   fontName=font_name, fontSize=8,  alignment=TA_LEFT,   spaceAfter=0,   leading=12)
+    add_style('GFooter',   fontName=font_name, fontSize=7,  alignment=TA_CENTER, spaceAfter=0,   leading=11, textColor=colors.HexColor('#7F8C8D'))
+
+    # ── 문서 셋업 ─────────────────────────────────────────────────
     pdf_buffer = io.BytesIO()
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
-    pdf_elements = []
-    
-    pdf_elements.append(Paragraph("📱 모바일동의(M스캔) 가이드 & 프로세스 요약", styles['GuideTitle']))
-    
-    doc_table_data = [['No.', '서류명', '법적근거']]
+    L, R, T, B = 15*mm, 15*mm, 14*mm, 12*mm
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
+                                rightMargin=R, leftMargin=L,
+                                topMargin=T,  bottomMargin=B)
+    page_w = A4[0] - L - R   # ≈ 180mm
+    elems  = []
+
+    # ── 헬퍼 : 섹션 헤더 블록 ──────────────────────────────────
+    def sec_hdr(label):
+        t = Table([[Paragraph(label, styles['GSecHdr'])]], colWidths=[page_w])
+        t.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(-1,-1), C_SEC_BG),
+            ('LINEBELOW',     (0,0),(-1,-1), 1.2, C_SUBHDR),
+            ('LINEBEFORE',    (0,0),(-1,-1), 4.0, C_SUBHDR),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LEFTPADDING',   (0,0),(-1,-1), 7),
+        ]))
+        return t
+
+    # ── ① 문서 제목 헤더 박스 ────────────────────────────────────
+    today_str = datetime.now().strftime("%Y년 %m월 %d일")
+    title_tbl = Table([
+        [Paragraph('모바일동의(M스캔) 가이드 &amp; 프로세스', styles['GTitle'])],
+        [Paragraph(f'발행일: {today_str}  |  M스캔 전용 서류 처리 대시보드', styles['GSubDate'])],
+    ], colWidths=[page_w])
+    title_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0),(-1,-1), C_HEADER),
+        ('LINEBELOW',     (0,-1),(-1,-1), 3.0, C_SUBHDR),
+        ('TOPPADDING',    (0,0),(-1,-1), 7),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 7),
+        ('TEXTCOLOR',     (0,0),(-1,-1), C_WHITE),
+    ]))
+    # 제목 텍스트 색상은 style에서 지정하나 배경이 진하므로 override
+    elems.append(title_tbl)
+    elems.append(Spacer(1, 5*mm))
+
+    # ── ② 필수 서류 4종 ─────────────────────────────────────────
+    elems.append(sec_hdr('【 책임판매 필수 서류 4종 완비 원칙 】'))
+    elems.append(Spacer(1, 1.5*mm))
+
+    doc_rows = []
+    hdr_cells = [
+        Paragraph('No.', styles['GSecHdr']),
+        Paragraph('서류명', styles['GSecHdr']),
+        Paragraph('법적근거', styles['GSecHdr']),
+        Paragraph('목적 및 주요내용', styles['GSecHdr']),
+    ]
+    doc_rows.append(hdr_cells)
+    row_bgs = [C_ROW_ODD, C_ROW_EVEN]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
-        doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
-    
-    doc_table = Table(doc_table_data, colWidths=[12*mm, 50*mm, 70*mm])
-    doc_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3)
+        doc_rows.append([
+            Paragraph(str(i), styles['GBodyBold']),
+            Paragraph(doc[1].replace('\n', '\n'), styles['GBody']),
+            Paragraph(doc[2].replace('\n', '\n'), styles['GBody']),
+            Paragraph(doc[3] if len(doc) > 3 else '', styles['GBody']),
+        ])
+
+    doc_col_w = [9*mm, 38*mm, 52*mm, page_w - 99*mm]
+    doc_tbl = Table(doc_rows, colWidths=doc_col_w)
+    doc_style_cmds = [
+        ('FONTNAME',      (0,0),(-1,-1), font_name),
+        ('FONTNAME',      (0,0),(-1,0),  font_bold),
+        ('FONTSIZE',      (0,0),(-1,-1), 8),
+        ('BACKGROUND',    (0,0),(-1,0),  C_HEADER),
+        ('TEXTCOLOR',     (0,0),(-1,0),  C_WHITE),
+        ('ALIGN',         (0,0),(0,-1),  'CENTER'),
+        ('ALIGN',         (1,0),(-1,-1), 'LEFT'),
+        ('VALIGN',        (0,0),(-1,-1), 'TOP'),
+        ('GRID',          (0,0),(-1,-1), 0.4, C_BORDER),
+        ('TOPPADDING',    (0,0),(-1,-1), 3.5),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 3.5),
+        ('LEFTPADDING',   (1,0),(-1,-1), 5),
+        ('LEFTPADDING',   (0,0),(0,-1),  2),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1), [C_ROW_ODD, C_ROW_EVEN]),
+        ('FONTNAME',      (0,1),(0,-1),  font_bold),
+        ('TEXTCOLOR',     (0,1),(0,-1),  C_ACCENT),
+        # No.4 행 (완전판매확인서) 서류명 셀에 볼드
+        ('FONTNAME',      (1,4),(1,4),   font_bold),
+    ]
+    doc_tbl.setStyle(TableStyle(doc_style_cmds))
+    elems.append(doc_tbl)
+    elems.append(Spacer(1, 5*mm))
+
+    # ── ③ 모바일동의 발송 결재 프로세스 (5단계 카드) ─────────────
+    elems.append(sec_hdr('【 모바일가입확인서 발송 및 결재 프로세스 】'))
+    elems.append(Spacer(1, 2*mm))
+
+    # 5단계 → 상단 번호 칩 + 타이틀 + 설명 카드 형태
+    step_cells = []
+    for idx, step in enumerate(PROCESS_FLOW):
+        bg = C_STEP_BG[idx] if idx < len(C_STEP_BG) else C_SUBHDR
+        # 번호 칩
+        chip = Table([[Paragraph(f"Step {step['step']}", styles['GStepNum'])]],
+                     colWidths=[page_w / len(PROCESS_FLOW) - 2*mm])
+        chip.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(-1,-1), bg),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LINEBELOW',     (0,0),(-1,-1), 2.5, bg),
+        ]))
+        step_cells.append(chip)
+
+    chips_row = Table([step_cells],
+                      colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
+    chips_row.setStyle(TableStyle([
+        ('TOPPADDING',    (0,0),(-1,-1), 0),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 0),
+        ('LEFTPADDING',   (0,0),(-1,-1), 1),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 1),
     ]))
-    pdf_elements.append(doc_table)
-    pdf_elements.append(Spacer(1, 2*mm))
-    
-    pdf_elements.append(Paragraph("🔄 모바일가입확인서 발송 및 결재 프로세스", styles['GuideSubtitle']))
-    process_rows = []
-    for step in PROCESS_FLOW:
-        process_rows.append([Paragraph(f"Step {step['step']}", styles['GuideText']), Paragraph(f"{step['title']}: {step['desc']}", styles['GuideText'])])
-        
-    process_table = Table(process_rows, colWidths=[20*mm, 140*mm])
-    process_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    elems.append(chips_row)
+    elems.append(Spacer(1, 1*mm))
+
+    # 각 스텝 내용 카드
+    step_content_cells = []
+    for idx, step in enumerate(PROCESS_FLOW):
+        bg = C_STEP_BG[idx] if idx < len(C_STEP_BG) else C_SUBHDR
+        cell_tbl = Table([
+            [Paragraph(step['title'], styles['GStepTitle'])],
+            [Paragraph(step['desc'],  styles['GStepDesc'])],
+        ], colWidths=[page_w / len(PROCESS_FLOW) - 2*mm])
+        cell_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(-1,-1), C_ROW_ODD),
+            ('LINEABOVE',     (0,0),(-1,0),  3.0, bg),
+            ('LINEBEFORE',    (0,0),(-1,-1), 0.4, C_BORDER),
+            ('LINEAFTER',     (0,0),(-1,-1), 0.4, C_BORDER),
+            ('LINEBELOW',     (0,-1),(-1,-1),0.4, C_BORDER),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LEFTPADDING',   (0,0),(-1,-1), 5),
+            ('RIGHTPADDING',  (0,0),(-1,-1), 4),
+            ('VALIGN',        (0,0),(-1,-1), 'TOP'),
+        ]))
+        step_content_cells.append(cell_tbl)
+
+    content_row = Table([step_content_cells],
+                        colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
+    content_row.setStyle(TableStyle([
+        ('TOPPADDING',    (0,0),(-1,-1), 0),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 0),
+        ('LEFTPADDING',   (0,0),(-1,-1), 1),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 1),
+        ('VALIGN',        (0,0),(-1,-1), 'TOP'),
     ]))
-    pdf_elements.append(process_table)
-    pdf_elements.append(Spacer(1, 2*mm))
-    
-    pdf_elements.append(Paragraph("❓ 자주 묻는 질문(FAQ) 및 안내", styles['GuideSubtitle']))
-    faq_items = []
-    for q, a in MOBILE_GUIDE["faq"]:
-        faq_items.append([Paragraph(f"Q. {q}", styles['GuideText']), Paragraph(f"A. {a}", styles['GuideText'])])
+    elems.append(content_row)
+    elems.append(Spacer(1, 5*mm))
+
+    # ── ④ M스캔 활용 안내 (2컬럼 카드) ──────────────────────────
+    elems.append(sec_hdr('【 모바일동의(M스캔) 활용 안내 】'))
+    elems.append(Spacer(1, 1.5*mm))
+
+    icons = ['① 자동매칭', '② 타임스탬프', '③ 누락 방지', '④ 비용 절감']
+    icon_descs = []
     for reason in MOBILE_GUIDE["reasons"]:
-        faq_items.append([Paragraph("💡 안내", styles['GuideText']), Paragraph(reason, styles['GuideText'])])
-        
-    faq_table = Table(faq_items, colWidths=[30*mm, 130*mm])
-    faq_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F4F6F7')]),
-        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+        clean = reason.replace('**', '')
+        colon_idx = clean.find(' : ')
+        desc = clean[colon_idx+3:].strip() if colon_idx != -1 else clean
+        icon_descs.append(desc)
+
+    guide_card_rows = []
+    for i in range(0, len(icons), 2):
+        row = []
+        for j in range(2):
+            idx = i + j
+            if idx < len(icons):
+                card = Table([
+                    [Paragraph(icons[idx], styles['GBodyBold'])],
+                    [Paragraph(icon_descs[idx], styles['GBody'])],
+                ], colWidths=[(page_w - 4*mm) / 2])
+                card.setStyle(TableStyle([
+                    ('BACKGROUND',    (0,0),(-1,-1), C_ROW_ODD),
+                    ('LINEABOVE',     (0,0),(-1,0),  3.0, C_SUBHDR),
+                    ('GRID',          (0,0),(-1,-1), 0.4, C_BORDER),
+                    ('TOPPADDING',    (0,0),(-1,-1), 4),
+                    ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+                    ('LEFTPADDING',   (0,0),(-1,-1), 6),
+                    ('RIGHTPADDING',  (0,0),(-1,-1), 5),
+                ]))
+                row.append(card)
+            else:
+                row.append('')
+        guide_card_rows.append(row)
+
+    guide_grid = Table(guide_card_rows, colWidths=[page_w/2, page_w/2])
+    guide_grid.setStyle(TableStyle([
+        ('TOPPADDING',    (0,0),(-1,-1), 2),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 2),
+        ('LEFTPADDING',   (0,0),(-1,-1), 0),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 2),
+        ('VALIGN',        (0,0),(-1,-1), 'TOP'),
     ]))
-    pdf_elements.append(faq_table)
-    
-    pdf_doc.build(pdf_elements)
+    elems.append(guide_grid)
+    elems.append(Spacer(1, 5*mm))
+
+    # ── ⑤ FAQ ────────────────────────────────────────────────────
+    elems.append(sec_hdr('【 자주 묻는 질문 (FAQ) 】'))
+    elems.append(Spacer(1, 1.5*mm))
+
+    faq_rows = []
+    for q_idx, (q, a) in enumerate(MOBILE_GUIDE["faq"]):
+        # Q 행
+        q_tbl = Table([
+            [Paragraph('Q', styles['GStepNum']),
+             Paragraph(q, styles['GFaqQ'])],
+        ], colWidths=[10*mm, page_w - 10*mm])
+        q_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(0,0),  C_ACCENT),
+            ('BACKGROUND',    (1,0),(1,0),  C_FAQ_Q_BG),
+            ('VALIGN',        (0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LEFTPADDING',   (0,0),(0,0),  2),
+            ('LEFTPADDING',   (1,0),(1,-1), 6),
+            ('GRID',          (0,0),(-1,-1), 0.4, C_BORDER),
+        ]))
+        faq_rows.append([q_tbl])
+
+        # A 행
+        a_tbl = Table([
+            [Paragraph('A', styles['GStepNum']),
+             Paragraph(a.replace('\n', '<br/>'), styles['GFaqA'])],
+        ], colWidths=[10*mm, page_w - 10*mm])
+        a_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(0,0),  colors.HexColor('#5DADE2')),
+            ('BACKGROUND',    (1,0),(1,0),  C_FAQ_A_BG),
+            ('VALIGN',        (0,0),(-1,-1),'TOP'),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LEFTPADDING',   (0,0),(0,0),  2),
+            ('LEFTPADDING',   (1,0),(1,-1), 6),
+            ('GRID',          (0,0),(-1,-1), 0.4, C_BORDER),
+            ('LINEBELOW',     (0,0),(-1,-1), 1.5, C_BORDER),
+        ]))
+        faq_rows.append([a_tbl])
+
+        if q_idx < len(MOBILE_GUIDE["faq"]) - 1:
+            faq_rows.append([Spacer(1, 2*mm)])
+
+    faq_outer = Table(faq_rows, colWidths=[page_w])
+    faq_outer.setStyle(TableStyle([
+        ('TOPPADDING',    (0,0),(-1,-1), 0),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 0),
+        ('LEFTPADDING',   (0,0),(-1,-1), 0),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 0),
+    ]))
+    elems.append(faq_outer)
+    elems.append(Spacer(1, 5*mm))
+
+    # ── ⑥ 필수 준수사항 (DO LIST) ────────────────────────────────
+    elems.append(sec_hdr('【 필수 준수사항 】'))
+    elems.append(Spacer(1, 1.5*mm))
+
+    do_rows = []
+    caution_keyword = "2026년 5월"
+    for item in MOBILE_GUIDE["do_list"]:
+        is_caution = caution_keyword in item
+        bg_  = C_CAUTION_BG  if is_caution else C_DO_BG
+        bdr_ = C_CAUTION_BDR if is_caution else C_DO_BDR
+        clean_item = item.replace('✅ ', '✅  ').replace('⚠️', '⚠')
+        cell_tbl = Table(
+            [[Paragraph(clean_item, styles['GDoItem'])]],
+            colWidths=[page_w]
+        )
+        cell_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),(-1,-1), bg_),
+            ('LINEBEFORE',    (0,0),(-1,-1), 4.0, bdr_),
+            ('LINEBELOW',     (0,0),(-1,-1), 0.4, C_BORDER),
+            ('TOPPADDING',    (0,0),(-1,-1), 4),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 4),
+            ('LEFTPADDING',   (0,0),(-1,-1), 8),
+        ]))
+        do_rows.append([cell_tbl])
+        do_rows.append([Spacer(1, 1.5*mm)])
+
+    do_outer = Table(do_rows, colWidths=[page_w])
+    do_outer.setStyle(TableStyle([
+        ('TOPPADDING',    (0,0),(-1,-1), 0),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 0),
+        ('LEFTPADDING',   (0,0),(-1,-1), 0),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 0),
+    ]))
+    elems.append(do_outer)
+    elems.append(Spacer(1, 6*mm))
+
+    # ── ⑦ 하단 푸터 ──────────────────────────────────────────────
+    footer_tbl = Table([
+        [Paragraph(
+            '본 가이드는 금융소비자보호법, 보험업감독규정, 개인정보보호법에 근거하며 내부 통제 기준에 따라 운영됩니다.',
+            styles['GFooter']
+        )],
+        [Paragraph(
+            f'M스캔 전용 서류 처리 대시보드  ·  출력일: {today_str}',
+            styles['GFooter']
+        )],
+    ], colWidths=[page_w])
+    footer_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0),(-1,-1), colors.HexColor('#F4F6F9')),
+        ('LINEABOVE',     (0,0),(-1,0),  1.5, C_HEADER),
+        ('LINEBELOW',     (0,-1),(-1,-1),1.5, C_HEADER),
+        ('TOPPADDING',    (0,0),(-1,-1), 5),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 5),
+    ]))
+    elems.append(footer_tbl)
+
+    pdf_doc.build(elems)
     pdf_buffer.seek(0)
     return pdf_buffer
 
