@@ -191,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수 (✅ 여백 최소화 + 그래프 크기 축소)
+# 4. PDF 생성 함수 (✅ 한 페이지 최적화 - 여백 최소화)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -212,26 +212,25 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     
     styles = getSampleStyleSheet()
     # ✅ spaceAfter 최소화 (한 페이지 출력용)
-    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
-    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
-    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=TA_LEFT, spaceAfter=1*mm))
-    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=TA_CENTER, spaceAfter=1*mm))
-    if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
+    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=15, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
+    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=10, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
+    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=8, alignment=TA_LEFT, spaceAfter=1*mm))
+    if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=11, bold=True, alignment=TA_CENTER, spaceAfter=1*mm))
         
     pdf_buffer = io.BytesIO()
-    # ✅ 마진 최소화 (5mm로 축소)
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=5*mm, leftMargin=5*mm, topMargin=5*mm, bottomMargin=5*mm)
+    # ✅ 마진 최소화 (3mm로 축소)
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=3*mm, leftMargin=3*mm, topMargin=3*mm, bottomMargin=3*mm)
     pdf_elements = []
     
     header_table = Table([['수신: ' + receiver], ['참조: ' + reference]])
     header_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), font_name), 
-        ('FONTSIZE', (0, 0), (-1, -1), 10), 
+        ('FONTSIZE', (0, 0), (-1, -1), 9), 
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'), 
         ('BOTTOMPADDING', (0, 0), (-1, -1), 1*mm)
     ]))
     pdf_elements.append(header_table)
-    pdf_elements.append(Spacer(1, 2*mm)) # ✅ Spacer 축소
+    pdf_elements.append(Spacer(1, 2*mm))
     
     pdf_elements.append(Paragraph(title, styles['CustTitle']))
     pdf_elements.append(Spacer(1, 2*mm))
@@ -239,26 +238,26 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(Paragraph(f"【대상 조직】 {recipient_name}", styles['CustSubtitle']))
     pdf_elements.append(Spacer(1, 2*mm))
 
-    # 1. 대시보드 차트 (✅ 높이 60mm로 축소)
+    # 1. 대시보드 차트 (✅ 높이 50mm로 축소)
     try:
         fig = go.Figure()
         fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
         fig.add_trace(go.Bar(name='목표', y=['M스캔율(%)'], x=[target_rate], orientation='h', marker_color='#E74C3C', text=[f"{target_rate:.1f}%"], textposition='outside'))
-        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=8, color="gray"))
-        # ✅ 그래프 높이 60mm로 축소
-        fig.update_layout(barmode='group', height=60, margin=dict(l=60, r=5, t=5, b=15), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
-        img_bytes = fig_to_png_bytes(fig, width=350, height=60, scale=2)
+        fig.add_annotation(text=f"기준: {date_str}", x=0, y=1.1, xref='paper', yref='paper', showarrow=False, font=dict(size=7, color="gray"))
+        # ✅ 그래프 높이 50mm로 축소
+        fig.update_layout(barmode='group', height=50, margin=dict(l=55, r=5, t=5, b=15), xaxis=dict(range=[0, max(actual_rate, target_rate)*1.2]))
+        img_bytes = fig_to_png_bytes(fig, width=320, height=50, scale=2)
         if img_bytes:
-            img = RLImage(io.BytesIO(img_bytes), width=110*mm, height=20*mm)
+            img = RLImage(io.BytesIO(img_bytes), width=100*mm, height=17*mm)
             pdf_elements.append(img)
             pdf_elements.append(Spacer(1, 1*mm))
     except Exception:
         pass
         
     # 2. 대시보드 표
-    status_table = Table(table_data, colWidths=[40*mm, 35*mm, 35*mm, 35*mm])
+    status_table = Table(table_data, colWidths=[38*mm, 35*mm, 35*mm, 35*mm])
     status_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -269,7 +268,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     pdf_elements.append(status_table)
     
     # ✅ 대시보드 표와 FA 집계 사이 간격 축소
-    pdf_elements.append(Spacer(1, 3*mm))
+    pdf_elements.append(Spacer(1, 2*mm))
 
     # 3. FA별 이용현황 집계
     fa_col = None
@@ -310,9 +309,9 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             ['미사용 FA', f'{not_using_fa:,}명', 'FA 사용률', f'{using_rate:.1f}%'],
             ['사용자 평균 M스캔율', f'{avg_m_scan_rate:.1f}%', '', '']
         ]
-        stats_table = Table(stats_data, colWidths=[35*mm, 35*mm, 35*mm, 35*mm])
+        stats_table = Table(stats_data, colWidths=[33*mm, 33*mm, 33*mm, 33*mm])
         stats_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#5DADE2')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -327,7 +326,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     for reason in MOBILE_GUIDE["reasons"]:
         pdf_elements.append(Paragraph(f"• {reason}", styles['KoreanText']))
     
-    pdf_elements.append(Spacer(1, 2*mm))
+    pdf_elements.append(Spacer(1, 1*mm))
     
     # 5. 필수 서류 4종
     pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
@@ -335,16 +334,16 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
         doc_table_data.append([str(i), doc[1], doc[2].replace('\n', ' ')])
     
-    doc_table = Table(doc_table_data, colWidths=[10*mm, 45*mm, 85*mm])
+    doc_table = Table(doc_table_data, colWidths=[9*mm, 42*mm, 82*mm])
     doc_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('FONTNAME', (0, 0), (-1, -1), font_name), ('FONTSIZE', (0, 0), (-1, -1), 6),
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#95A5A6')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 1), ('BOTTOMPADDING', (0, 0), (-1, -1), 1)
     ]))
     pdf_elements.append(doc_table)
-    pdf_elements.append(Spacer(1, 2*mm))
+    pdf_elements.append(Spacer(1, 1*mm))
     
     # 6. 요청사항
     pdf_elements.append(Paragraph("【요청사항】", styles['CustSubtitle']))
@@ -353,11 +352,11 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     
     # 7. 특이사항
     if special_notes and str(special_notes).strip() and str(special_notes).lower() != 'nan':
-        pdf_elements.append(Spacer(1, 2*mm))
-        special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[145*mm])
+        pdf_elements.append(Spacer(1, 1*mm))
+        special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[138*mm])
         special_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F9E79F')),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -368,7 +367,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         pdf_elements.append(special_table)
     
     # 8. 발신 정보 (중앙 정렬)
-    pdf_elements.append(Spacer(1, 3*mm))
+    pdf_elements.append(Spacer(1, 2*mm))
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
     pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
     
@@ -869,7 +868,7 @@ def main():
             st.success("👋 접속 완료")
             if st.button("🚪 로그아웃", use_container_width=True): st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v16.1 | 한페이지최적화 | 여백최소화 | 그래프축소")
+            st.caption("v16.2 | 한페이지완벽최적화 | 여백초최소화 | 그래프초축소")
         dashboard_page()
 
 if __name__ == "__main__":
