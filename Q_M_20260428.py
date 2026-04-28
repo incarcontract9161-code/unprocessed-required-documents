@@ -982,7 +982,7 @@ def generate_guide_pdf():
 # 5. UI – 로그인 & 대시보드
 # ==========================================
 def login_page():
-    st.title("🔐 시스템 접속")
+    st.title("🔐모바일 동의 이용 현황 시스템 접속")
     pwd = st.text_input("접속 비밀번호를 입력하세요", type="password")
     if st.button("접속하기", use_container_width=True, type="primary"):
         if pwd == APP_PASSWORD:
