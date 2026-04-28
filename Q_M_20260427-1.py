@@ -191,7 +191,7 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     return all_targets[["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]]
 
 # ==========================================
-# 4. PDF 생성 함수 (레이아웃 최적화 및 FA 집계표 위치/내용 수정)
+# 4. PDF 생성 함수 (레이아웃 간격 조정 및 FA 집계 천단위 구분자 추가)
 # ==========================================
 def fig_to_png_bytes(fig, width=600, height=300, scale=2):
     try:
@@ -211,9 +211,10 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             font_name = 'Helvetica'
     
     styles = getSampleStyleSheet()
-    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=TA_LEFT, spaceAfter=2*mm))
-    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=TA_LEFT, spaceAfter=1*mm))
-    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=TA_LEFT, spaceAfter=1*mm))
+    # ✅ 단락 간격 조정을 위해 spaceAfter 증가
+    if 'CustTitle' not in styles: styles.add(ParagraphStyle(name='CustTitle', fontName=font_name, fontSize=16, bold=True, alignment=TA_LEFT, spaceAfter=5*mm))
+    if 'CustSubtitle' not in styles: styles.add(ParagraphStyle(name='CustSubtitle', fontName=font_name, fontSize=11, bold=True, alignment=TA_LEFT, spaceAfter=4*mm))
+    if 'KoreanText' not in styles: styles.add(ParagraphStyle(name='KoreanText', fontName=font_name, fontSize=9, alignment=TA_LEFT, spaceAfter=3*mm))
     if 'SenderStyle' not in styles: styles.add(ParagraphStyle(name='SenderStyle', fontName=font_name, fontSize=12, bold=True, alignment=TA_CENTER, spaceAfter=1*mm))
     if 'SmallText' not in styles: styles.add(ParagraphStyle(name='SmallText', fontName=font_name, fontSize=8, spaceAfter=1*mm))
         
@@ -230,15 +231,15 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2*mm)
     ]))
     pdf_elements.append(header_table)
-    pdf_elements.append(Spacer(1, 1*mm))
+    pdf_elements.append(Spacer(1, 5*mm)) # ✅ 헤더와 제목 사이 간격
     
     pdf_elements.append(Paragraph(title, styles['CustTitle']))
-    pdf_elements.append(Spacer(1, 2*mm))
+    pdf_elements.append(Spacer(1, 5*mm)) # ✅ 제목과 대상 조직 사이 간격
     
     pdf_elements.append(Paragraph(f"【대상 조직】 {recipient_name}", styles['CustSubtitle']))
-    pdf_elements.append(Spacer(1, 3*mm))
+    pdf_elements.append(Spacer(1, 5*mm)) # ✅ 대상 조직과 차트 사이 간격
 
-    # 1. 대시보드 차트 (대상 조직 바로 아래)
+    # 1. 대시보드 차트
     try:
         fig = go.Figure()
         fig.add_trace(go.Bar(name='현황', y=['M스캔율(%)'], x=[actual_rate], orientation='h', marker_color='#3498DB', text=[f"{actual_rate:.1f}%"], textposition='outside'))
@@ -249,7 +250,7 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         if img_bytes:
             img = RLImage(io.BytesIO(img_bytes), width=120*mm, height=25*mm)
             pdf_elements.append(img)
-            pdf_elements.append(Spacer(1, 2*mm))
+            pdf_elements.append(Spacer(1, 3*mm)) # ✅ 차트와 표 사이 간격
     except Exception:
         pass
         
@@ -265,11 +266,11 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
     ]))
     pdf_elements.append(status_table)
+    
+    # ✅ 대시보드 표와 FA 집계 사이 간격 (한 줄 공백 강조)
+    pdf_elements.append(Spacer(1, 7*mm))
 
-    # ✅ 한 줄 간격 (Spacer) 추가
-    pdf_elements.append(Spacer(1, 4*mm))
-
-    # 3. FA별 이용현황 집계 (대시보드 바로 아래로 이동)
+    # 3. FA별 이용현황 집계 (대시보드 바로 아래)
     fa_col = None
     if df_sel is not None:
         for col in df_sel.columns:
@@ -302,10 +303,10 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         else:
             avg_m_scan_rate = 0
         
-        # 집계 통계 표 (레이아웃 변경)
+        # ✅ 집계 통계 표 (천단위 구분기호 적용)
         stats_data = [
-            ['총 FA 수', f'{total_fa}명', 'M스캔 사용 FA', f'{using_fa}명'],
-            ['미사용 FA', f'{not_using_fa}명', 'FA 사용률', f'{using_rate:.1f}%'],
+            ['총 FA 수', f'{total_fa:,}명', 'M스캔 사용 FA', f'{using_fa:,}명'],
+            ['미사용 FA', f'{not_using_fa:,}명', 'FA 사용률', f'{using_rate:.1f}%'],
             ['사용자 평균 M스캔율', f'{avg_m_scan_rate:.1f}%', '', '']
         ]
         stats_table = Table(stats_data, colWidths=[35*mm, 35*mm, 35*mm, 35*mm])
@@ -318,14 +319,14 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ]))
         pdf_elements.append(stats_table)
 
-    pdf_elements.append(Spacer(1, 3*mm))
+    pdf_elements.append(Spacer(1, 5*mm)) # ✅ FA 집계와 가이드 사이 간격
         
     # 4. 가이드 텍스트
     pdf_elements.append(Paragraph("【모바일동의(M스캔) 안내】", styles['CustSubtitle']))
     for reason in MOBILE_GUIDE["reasons"]:
         pdf_elements.append(Paragraph(f"• {reason}", styles['KoreanText']))
     
-    pdf_elements.append(Spacer(1, 1*mm))
+    pdf_elements.append(Spacer(1, 4*mm)) # ✅ 가이드와 필수서류 사이 간격
     
     # 5. 필수 서류 4종
     pdf_elements.append(Paragraph("【필수 서류 4종 완비 원칙】", styles['CustSubtitle']))
@@ -342,15 +343,16 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)
     ]))
     pdf_elements.append(doc_table)
-    pdf_elements.append(Spacer(1, 1*mm))
+    pdf_elements.append(Spacer(1, 4*mm)) # ✅ 필수서류와 요청사항 사이 간격
     
     # 6. 요청사항
     pdf_elements.append(Paragraph("【요청사항】", styles['CustSubtitle']))
     for i in range(1, 4):
         pdf_elements.append(Paragraph(f"{i}. {['설정된 목표를 반드시 달성하여 주시기 바랍니다.', '모바일동의(M스캔)를 적극 활용하여 업무 효율성과 법적 증빙력을 확보해 주시기 바랍니다.', '2026년 5월부터는 서류 미비 시 내부 통제 미충족 조직으로 관리되오니 각별한 주의 바랍니다.'][i-1]}", styles['KoreanText']))
     
+    # 7. 특이사항
     if special_notes and str(special_notes).strip() and str(special_notes).lower() != 'nan':
-        pdf_elements.append(Spacer(1, 1*mm))
+        pdf_elements.append(Spacer(1, 4*mm)) # ✅ 요청사항과 특이사항 사이 간격
         special_table = Table([[f"【특이사항】 {special_notes}"]], colWidths=[145*mm])
         special_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, -1), font_name),
@@ -364,8 +366,8 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         ]))
         pdf_elements.append(special_table)
     
-    # 7. 발신 정보 (중앙 정렬)
-    pdf_elements.append(Spacer(1, 5*mm))
+    # 8. 발신 정보 (중앙 정렬)
+    pdf_elements.append(Spacer(1, 8*mm)) # ✅ 하단 여백
     pdf_elements.append(Paragraph(f"{sender_dept}", styles['SenderStyle']))
     pdf_elements.append(Paragraph(f"담당자: {dispatcher_name} (직인생략)", styles['SenderStyle']))
     
@@ -866,7 +868,7 @@ def main():
             st.success("👋 접속 완료")
             if st.button("🚪 로그아웃", use_container_width=True): st.session_state.logged_in = False; st.rerun()
             st.divider()
-            st.caption("v15.9 | 기준치완전연동 | 목표달성필요행추가 | FA현황공문통합 | 레이아웃정렬완료")
+            st.caption("v16.0 | 레이아웃간격조정 | FA집계천단위구분자 | 전체코드완성")
         dashboard_page()
 
 if __name__ == "__main__":
