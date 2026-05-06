@@ -1,6 +1,9 @@
-streamlit
-pandas
-openpyxl
-plotly
-kaleido
-reportlab
+streamlit==1.31.0
+pandas==2.1.4
+plotly==5.18.0
+kaleido==0.2.1
+openpyxl==3.1.2
+xlsxwriter==3.1.9
+reportlab==4.0.8
+numpy==1.26.4
+pyxlsb==1.0.10
