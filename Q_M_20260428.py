@@ -27,9 +27,9 @@ st.set_page_config(page_title="M스캔 전용 서류 처리 대시보드", layou
 # ==========================================
 # 1. 전역 설정 & 가이드 내용
 # ==========================================
-EXCEL_FILE = "insurance_data.xlsx"
+EXCEL_FILE = "insurance_data.xlsb"
 TARGET_FILE = "target_settings.xlsx"
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar911")
 MANUAL_FILES = ["모바일동의_독려_안내.pdf", "모바일_보험가입확인서_장기_계피동일건발송절차_v2.pdf"]
 
 GUIDANCE_DOCS = [
@@ -998,7 +998,7 @@ def dashboard_page():
 
     df = load_data()
     if df.empty:
-        st.warning("데이터가 없습니다. insurance_data.xlsx 파일을 확인해주세요.")
+        st.warning("데이터가 없습니다. insurance_data.xlsb 파일을 확인해주세요.")
         return
 
     col1, col2 = st.columns([2, 1])
