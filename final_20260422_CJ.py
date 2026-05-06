@@ -26,7 +26,7 @@ st.set_page_config(page_title="보험 서류 스캔 관리 대시보드", layout
 # 1. 전역 설정 & 인증
 # ==========================================
 # GitHub에 업로드할 엑셀 파일명
-EXCEL_FILE = "insurance_data.xlsb"
+EXCEL_FILE = "insurance_data.xlsx"
 
 # Render 배포 시 환경변수(APP_PASSWORD) 사용, 로컬 테스트 시 기본값 적용
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar911")
@@ -1177,7 +1177,8 @@ def dashboard_page():
 
     df = load_data()
     if df.empty:
-        st.warning("\ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4. insurance_data.xlsb \ud30c\uc77c\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.")
+        st.warning("\ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4. insurance_data.xlsx
+        \ud30c\uc77c\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694.")
         return
 
     col1, col2, col3 = st.columns([2, 1, 1])
