@@ -88,7 +88,7 @@ def load_data():
        engine="pyxlsb",
        converters={7: str}  # H열(8번째 컬럼)을 문자열로 읽기
        )
-        if df.empty: return pd.DataFrame()
+    if df.empty: return pd.DataFrame()
         df.columns = df.columns.str.strip()
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
         df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
