@@ -82,7 +82,12 @@ def load_data():
         st.error(f"⚠️ '{EXCEL_FILE}' 파일이 없습니다.")
         return pd.DataFrame()
     try:
-        df = pd.read_excel(EXCEL_FILE)
+        # 변경 후 (xlsb + H열을 문자열로 강제)
+       df = pd.read_excel(
+       EXCEL_FILE,
+       engine="pyxlsb",
+       converters={7: str}  # H열(8번째 컬럼)을 문자열로 읽기
+       )
         if df.empty: return pd.DataFrame()
         df.columns = df.columns.str.strip()
         df["보험시작일_dt"] = pd.to_datetime(df["보험시작일"], errors="coerce")
