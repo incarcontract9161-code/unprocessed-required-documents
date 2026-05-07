@@ -26,7 +26,7 @@ st.set_page_config(page_title="보험 서류 스캔 관리 대시보드", layout
 # 1. 전역 설정 & 인증
 # ==========================================
 # GitHub에 업로드할 엑셀 파일명
-EXCEL_FILE = "insurance_data.xlsx"
+EXCEL_FILE = "insurance_data.xlsb"
 
 # Render 배포 시 환경변수(APP_PASSWORD) 사용, 로컬 테스트 시 기본값 적용
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "incar961")
