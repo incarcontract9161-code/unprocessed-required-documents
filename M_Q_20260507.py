@@ -73,8 +73,11 @@ PROCESS_FLOW = [
 # ==========================================
 # 2. 데이터 로딩 & 헬퍼
 # ==========================================
+# ✅ safe_rate 함수 수정: pandas Series 호환 처리
 def safe_rate(num, den):
-    return (num / den.replace(0, float('nan')) * 100).round(1).fillna(0.0)
+    """0으로 나누기 방지 + pandas Series 호환"""
+    den_clean = den.replace(0, pd.NA) if hasattr(den, 'replace') else (pd.NA if den == 0 else den)
+    return (num / den_clean * 100).round(1).fillna(0.0)
 
 @st.cache_data(ttl=300)
 def load_data():
@@ -89,23 +92,21 @@ def load_data():
         else:
             df = pd.read_excel(EXCEL_FILE)
         
-        if df.empty: return pd.DataFrame()
+        if df.empty: 
+            return pd.DataFrame()
+        
+        # ✅ 1. 열 이름 앞뒤 공백 제거 (핵심!)
         df.columns = df.columns.str.strip()
         
-        # ✅ 1. 월도(날짜) 열 자동 탐지 (키워드 매칭 또는 H열 fallback)
-        date_col = None
-        for col in df.columns:
-            if any(k in col for k in ["보험시작일", "시작일", "계약일", "일자"]):
-                date_col = col
-                break
-        if date_col is None and len(df.columns) > 7:
-            date_col = df.columns[7]
-            st.warning(f"⚠️ 날짜 열을 찾지 못해 H열('{date_col}')을 월도 기준으로 자동 적용합니다.")
-        elif date_col is None:
-            st.error("❌ 월도(날짜) 열을 찾을 수 없습니다.")
-            return pd.DataFrame()
-
-        # ✅ 2. 혼합 날짜 형식 파싱 (텍스트 + 엑셀 시리얼 넘버 동시 지원)
+        # ✅ 2. 월도(날짜) 열 자동 탐지 (키워드 매칭 또는 '보험시작일' 기본)
+        date_col = '보험시작일'  # 기본값
+        if date_col not in df.columns:
+            for col in df.columns: 
+                if any(k in col for k in ["보험시작일", "시작일", "계약일", "일자"]):
+                    date_col = col
+                    break
+        
+        # ✅ 3. 혼합 날짜 형식 파싱 (텍스트 + 엑셀 시리얼 넘버 동시 지원)
         raw_date = df[date_col]
         # 1차: 일반 문자열/날짜 파싱
         parsed = pd.to_datetime(raw_date, errors='coerce', format='mixed')
@@ -118,34 +119,42 @@ def load_data():
             excel_epoch = pd.Timestamp('1899-12-30')
             parsed[mask] = pd.to_timedelta(valid_serial, unit='D') + excel_epoch
             
-        df["보험시작일_dt "] = parsed
-        df["월_피리어드 "] = df["보험시작일_dt "].dt.to_period("M").astype(str)
+        df["보험시작일_dt"] = parsed
+        df["월_피리어드"] = df["보험시작일_dt"].dt.to_period("M").astype(str)
         st.success(f"✅ 월도 기준 열: '{date_col}' | 총 {len(df):,}건 로드")
         
-        # 이하 원본 로직 유지
-        df["FA고지_c "] = df["FA고지 "].fillna(" ").astype(str).str.strip()
-        df["비교설명_c "] = df["비교설명 "].fillna(" ").astype(str).str.strip()
-        df["완전판매_c "] = df["완전판매 "].fillna(" ").astype(str).str.strip()
+        # ✅ 4. ✅ 공백 제거된 열 이름으로 접근 (핵심 수정!)
+        df["FA고지_c"] = df["FA고지"].fillna(" ").astype(str).str.strip()
+        df["비교설명_c"] = df["비교설명"].fillna(" ").astype(str).str.strip()
+        df["완전판매_c"] = df["완전판매"].fillna(" ").astype(str).str.strip()
         
-        def is_total_scanned(val): return not (pd.isna(val) or val == " ") and str(val).strip() in ["스캔 ", "M스캔 ", "보험사스캔 "]
-        def is_m_scanned(val): return not (pd.isna(val) or val == " ") and str(val).strip() == "M스캔 "
-        def is_cs_target(val): return not (pd.isna(val) or val == " ") and str(val).strip() in ["스캔 ", "M스캔 ", "미스캔 "]
+        def is_total_scanned(val): 
+            return not (pd.isna(val) or val == " ") and str(val).strip() in ["스캔", "M스캔", "보험사스캔"]
+        def is_m_scanned(val): 
+            return not (pd.isna(val) or val == " ") and str(val).strip() == "M스캔"
+        def is_cs_target(val): 
+            return not (pd.isna(val) or val == " ") and str(val).strip() in ["스캔", "M스캔", "미스캔"]
         
-        df["FA_전체스캔 "] = df["FA고지_c "].apply(is_total_scanned).astype(int)
-        df["비교_전체스캔 "] = df["비교설명_c "].apply(is_total_scanned).astype(int)
-        df["완판_전체스캔 "] = df["완전판매_c "].apply(is_total_scanned).astype(int)
-        df["FA_M스캔 "] = df["FA고지_c "].apply(is_m_scanned).astype(int)
-        df["비교_M스캔 "] = df["비교설명_c "].apply(is_m_scanned).astype(int)
-        df["완판_M스캔 "] = df["완전판매_c "].apply(is_m_scanned).astype(int)
-        df["완판_대상 "] = df["완전판매_c "].apply(is_cs_target).astype(int)
-        df["FA_target "], df["비교_target "] = 1, 1
-        df["완판_target "] = df["완판_대상 "]
-        df["대상건 "] = df[["FA_target ", "비교_target ", "완판_target "]].sum(axis=1).astype(int)
-        df["전체스캔건 "] = df[["FA_전체스캔 ", "비교_전체스캔 ", "완판_전체스캔 "]].sum(axis=1).astype(int)
-        df["M스캔건 "] = df[["FA_M스캔 ", "비교_M스캔 ", "완판_M스캔 "]].sum(axis=1).astype(int)
+        df["FA_전체스캔"] = df["FA고지_c"].apply(is_total_scanned).astype(int)
+        df["비교_전체스캔"] = df["비교설명_c"].apply(is_total_scanned).astype(int)
+        df["완판_전체스캔"] = df["완전판매_c"].apply(is_total_scanned).astype(int)
+        df["FA_M스캔"] = df["FA고지_c"].apply(is_m_scanned).astype(int)
+        df["비교_M스캔"] = df["비교설명_c"].apply(is_m_scanned).astype(int)
+        df["완판_M스캔"] = df["완전판매_c"].apply(is_m_scanned).astype(int)
+        df["완판_대상"] = df["완전판매_c"].apply(is_cs_target).astype(int)
+        
+        df["FA_target"], df["비교_target"] = 1, 1
+        df["완판_target"] = df["완판_대상"]
+        df["대상건"] = df[["FA_target", "비교_target", "완판_target"]].sum(axis=1).astype(int)
+        df["전체스캔건"] = df[["FA_전체스캔", "비교_전체스캔", "완판_전체스캔"]].sum(axis=1).astype(int)
+        df["M스캔건"] = df[["FA_M스캔", "비교_M스캔", "완판_M스캔"]].sum(axis=1).astype(int)
+        
         return df
     except ImportError as e:
         st.error(f"❌ XLSB 파일 읽기 오류: 'pyxlsb' 라이브러리가 설치되지 않았습니다.\n터미널에서 `pip install pyxlsb` 를 실행해주세요.")
+        return pd.DataFrame()
+    except KeyError as e:
+        st.error(f"❌ 열 이름 오류: {e}\n엑셀 파일의 열 이름을 확인해주세요. (공백 포함 여부)")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ 엑셀 파일 읽기 오류: {e}")
@@ -167,7 +176,8 @@ def load_targets():
         df = pd.read_excel(TARGET_FILE)
         required_cols = ["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]
         for col in required_cols:
-            if col not in df.columns: df[col] = ""
+            if col not in df.columns: 
+                df[col] = ""
         df["조직단계"] = df["조직단계"].astype(str)
         df["조직명"] = df["조직명"].astype(str)
         df["M스캔율_목표"] = pd.to_numeric(df["M스캔율_목표"], errors="coerce").fillna(0.0)
@@ -181,7 +191,8 @@ def save_targets(df_targets):
     try:
         required_cols = ["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]
         for col in required_cols:
-            if col not in df_targets.columns: df_targets[col] = ""
+            if col not in df_targets.columns: 
+                df_targets[col] = ""
         df_targets[required_cols].to_excel(TARGET_FILE, index=False)
         st.cache_data.clear()
         return True
@@ -191,26 +202,33 @@ def save_targets(df_targets):
 
 @st.cache_data(ttl=300)
 def build_org_stats(df, months=None, group_cols=["영업가족"], view_mode="누적"):
-    src = df[df["월_피리어드 "].isin(months)].copy() if months else df.copy()
-    if src.empty: return pd.DataFrame()
+    src = df[df["월_피리어드"].isin(months)].copy() if months else df.copy()
+    if src.empty: 
+        return pd.DataFrame()
     keys = group_cols.copy()
-    if view_mode == "월별": keys = ["월_피리어드 "] + keys
-    agg_df = src.groupby(keys).agg(대상건=("대상건 ", "sum"), 전체스캔건=("전체스캔건 ", "sum"), M스캔건=("M스캔건 ", "sum")).reset_index()
+    if view_mode == "월별": 
+        keys = ["월_피리어드"] + keys
+    agg_df = src.groupby(keys).agg(
+        대상건=("대상건", "sum"), 
+        전체스캔건=("전체스캔건", "sum"), 
+        M스캔건=("M스캔건", "sum")
+    ).reset_index()
     agg_df.columns = agg_df.columns.str.strip()
-    agg_df["M스캔율_대상 "] = safe_rate(agg_df["M스캔건 "], agg_df["대상건 "])
-    agg_df["M스캔율_완료 "] = safe_rate(agg_df["M스캔건 "], agg_df["전체스캔건 "])
+    agg_df["M스캔율_대상"] = safe_rate(agg_df["M스캔건"], agg_df["대상건"])
+    agg_df["M스캔율_완료"] = safe_rate(agg_df["M스캔건"], agg_df["전체스캔건"])
     if view_mode == "월별":
-        agg_df = agg_df.rename(columns={"월_피리어드 ": "월"})
-        agg_df["월_표시 "] = agg_df["월"].apply(lambda x: f"{x.replace('-', '.')[:7]}월" if pd.notna(x) else "")
-        agg_df["표시명 "] = agg_df["월_표시 "] + " |  " + agg_df[group_cols[-1]].astype(str)
+        agg_df = agg_df.rename(columns={"월_피리어드": "월"})
+        agg_df["월_표시"] = agg_df["월"].apply(lambda x: f"{x.replace('-', '.')[:7]}월" if pd.notna(x) else "")
+        agg_df["표시명"] = agg_df["월_표시"] + " | " + agg_df[group_cols[-1]].astype(str)
     else:
-        agg_df["월_표시 "] = ""
-        agg_df["표시명 "] = agg_df[group_cols[-1]].astype(str)
+        agg_df["월_표시"] = ""
+        agg_df["표시명"] = agg_df[group_cols[-1]].astype(str)
     return agg_df
 
 def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
     if df_actual.empty or "영업가족" not in df_actual.columns:
         return pd.DataFrame(columns=["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"])
+    
     def calc_targets_for_group(group_df, group_col, group_name):
         agg = group_df.groupby(group_col).agg({"대상건": "sum", "M스캔건": "sum", "전체스캔건": "sum"}).reset_index()
         agg.columns = [group_col, "대상건", "M스캔건", "전체스캔건"]
@@ -219,14 +237,25 @@ def auto_allocate_targets(df_actual, df_existing, increase_rate=0.10):
         results = []
         for _, row in agg.iterrows():
             vol, rate = row["대상건"], row["현재_실적율"]
-            if vol < p30: adj, label = 1.15 + min(0.05, (p30 - vol) / max(p30, 1) * 0.05), "소규모(성장유도)"
-            elif vol < p70: adj, label = 1.10, "중규모(기준)"
-            else: adj, label = 1.05 + (vol - p70) / max(max_vol - p70, 1) * 0.03, "대규모(현실유지)"
-            results.append({"조직단계": group_name, "조직명": str(row[group_col]), "M스캔율_목표": round(min(max(rate * adj, 30.0), 95.0), 1), "배분사유": f"{label} | 기본+{int((adj-1)*100)}%", "특이사항": ""})
+            if vol < p30: 
+                adj, label = 1.15 + min(0.05, (p30 - vol) / max(p30, 1) * 0.05), "소규모(성장유도)"
+            elif vol < p70: 
+                adj, label = 1.10, "중규모(기준)"
+            else: 
+                adj, label = 1.05 + (vol - p70) / max(max_vol - p70, 1) * 0.03, "대규모(현실유지)"
+            results.append({
+                "조직단계": group_name, 
+                "조직명": str(row[group_col]), 
+                "M스캔율_목표": round(min(max(rate * adj, 30.0), 95.0), 1), 
+                "배분사유": f"{label} | 기본+{int((adj-1)*100)}%", 
+                "특이사항": ""
+            })
         return pd.DataFrame(results)
+    
     all_targets = pd.concat([calc_targets_for_group(df_actual, g, g) for g in ["영업가족", "부서", "총괄", "부문"]], ignore_index=True)
     for col in ["조직단계", "조직명", "M스캔율_목표", "배분사유", "특이사항"]:
-        if col not in all_targets.columns: all_targets[col] = ""
+        if col not in all_targets.columns: 
+            all_targets[col] = ""
     if not df_existing.empty and "조직명" in df_existing.columns and "특이사항" in df_existing.columns:
         notes_map = dict(zip(df_existing["조직명"], df_existing["특이사항"]))
         all_targets["특이사항"] = all_targets["조직명"].map(notes_map).fillna(all_targets["특이사항"])
@@ -257,23 +286,24 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             font_bold = 'Helvetica-Bold'
 
     # ── 색상 팔레트 ──────────────────────────────────────────────
-    COLOR_HEADER     = colors.HexColor('#1B3A6B')   # 진남색 (제목 헤더)
-    COLOR_SUBHDR     = colors.HexColor('#2E5FA3')   # 중간 파랑 (섹션 헤더)
-    COLOR_FA_HDR     = colors.HexColor('#2471A3')   # FA 통계 헤더
-    COLOR_ACCENT     = colors.HexColor('#1F618D')   # 강조 셀 배경
-    COLOR_ROW_ODD    = colors.HexColor('#EBF5FB')   # 홀수행
+    COLOR_HEADER     = colors.HexColor('#1B3A6B')
+    COLOR_SUBHDR     = colors.HexColor('#2E5FA3')
+    COLOR_FA_HDR     = colors.HexColor('#2471A3')
+    COLOR_ACCENT     = colors.HexColor('#1F618D')
+    COLOR_ROW_ODD    = colors.HexColor('#EBF5FB')
     COLOR_ROW_EVEN   = colors.white
     COLOR_BORDER     = colors.HexColor('#AEB6BF')
-    COLOR_WARN       = colors.HexColor('#FEF9E7')   # 특이사항 배경
+    COLOR_WARN       = colors.HexColor('#FEF9E7')
     COLOR_WARN_BDR   = colors.HexColor('#F0B429')
-    COLOR_DIFF_NEG   = colors.HexColor('#FDEDEC')   # 미달 행
-    COLOR_SENDER_BG  = colors.HexColor('#F4F6F9')   # 발신 박스 배경
+    COLOR_DIFF_NEG   = colors.HexColor('#FDEDEC')
+    COLOR_SENDER_BG  = colors.HexColor('#F4F6F9')
     COLOR_WHITE      = colors.white
 
     # ── 스타일 ────────────────────────────────────────────────────
     styles = getSampleStyleSheet()
     def add_style(name, **kw):
-        if name not in styles: styles.add(ParagraphStyle(name=name, **kw))
+        if name not in styles: 
+            styles.add(ParagraphStyle(name=name, **kw))
 
     add_style('DocReceiver',  fontName=font_name, fontSize=9,  alignment=TA_LEFT,   spaceAfter=1*mm, leading=13)
     add_style('DocTitle',     fontName=font_bold, fontSize=16, alignment=TA_CENTER, spaceAfter=3*mm, leading=20, textColor=COLOR_HEADER)
@@ -298,7 +328,8 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             ('LEFTPADDING',  (0, 0), (-1, -1), 4),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]
-        if extra: base.extend(extra)
+        if extra: 
+            base.extend(extra)
         return TableStyle(base)
 
     # ── 수평 구분선 헬퍼 ─────────────────────────────────────────
@@ -326,10 +357,8 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     # ── 문서 빌드 ─────────────────────────────────────────────────
     pdf_buffer = io.BytesIO()
     L, R, T, B = 15*mm, 15*mm, 15*mm, 12*mm
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
-                                rightMargin=R, leftMargin=L,
-                                topMargin=T, bottomMargin=B)
-    page_w = A4[0] - L - R   # 유효 폭 ≈ 180mm
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=R, leftMargin=L, topMargin=T, bottomMargin=B)
+    page_w = A4[0] - L - R
     elems = []
 
     # ── ① 수신/참조 ──────────────────────────────────────────────
@@ -414,7 +443,6 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     diff_row_idx = []
     for r_idx, row in enumerate(table_data[1:], 1):
         kpi_rows.append(row)
-        # 차이가 음수(미달)인 행 강조
         try:
             if row[3] and row[3] != '-' and float(row[3].replace('%','').replace('+','')) < 0:
                 diff_row_idx.append(r_idx)
@@ -484,11 +512,6 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0]
         avg_m_scan_rate = using_fa_stats["M스캔율"].mean() if not using_fa_stats.empty else 0
 
-        def fa_cell(label, value, is_label=True):
-            style = font_bold if is_label else font_name
-            col   = COLOR_WHITE if is_label else colors.black
-            return Paragraph(f'<font name="{style}" color="#{col.hexval()[2:] if hasattr(col,"hexval") else "000000"}">{label if is_label else value}</font>', styles['BodyText8'])
-
         # 6칸 그리드: 라벨 | 값  라벨 | 값  라벨 | 값
         stats_data = [
             ['총 FA 수',         f'{total_fa:,}명',          'M스캔 사용 FA',     f'{using_fa:,}명',        '미사용 FA',              f'{not_using_fa:,}명'],
@@ -504,14 +527,12 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             ('GRID',          (0, 0), (-1, -1), 0.4, COLOR_BORDER),
             ('TOPPADDING',    (0, 0), (-1, -1), 2.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
-            # 라벨 셀(짝수 열) 배경
             ('BACKGROUND',    (0, 0), (0, -1), colors.HexColor('#D6EAF8')),
             ('BACKGROUND',    (2, 0), (2, -1), colors.HexColor('#D6EAF8')),
             ('BACKGROUND',    (4, 0), (4, -1), colors.HexColor('#D6EAF8')),
             ('FONTNAME',      (0, 0), (0, -1), font_bold),
             ('FONTNAME',      (2, 0), (2, -1), font_bold),
             ('FONTNAME',      (4, 0), (4, -1), font_bold),
-            # 값 셀 강조
             ('FONTNAME',      (1, 0), (1, -1), font_bold),
             ('FONTNAME',      (3, 0), (3, -1), font_bold),
             ('FONTNAME',      (5, 0), (5, -1), font_bold),
@@ -530,7 +551,6 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
     guide_rows = []
     icons = ['①', '②', '③', '④']
     for i, reason in enumerate(MOBILE_GUIDE["reasons"]):
-        # 키워드(**...**) 파싱: 볼드 처리
         clean = reason.replace('**', '', 1)
         colon_idx = clean.find('**')
         if colon_idx != -1:
@@ -666,20 +686,20 @@ def generate_guide_pdf():
             font_bold = 'Helvetica-Bold'
 
     # ── 색상 팔레트 (공문과 동일 체계) ──────────────────────────
-    C_HEADER     = colors.HexColor('#1B3A6B')   # 진남색
-    C_SUBHDR     = colors.HexColor('#2E5FA3')   # 중간 파랑
-    C_ACCENT     = colors.HexColor('#1F618D')   # 강조 파랑
-    C_ROW_ODD    = colors.HexColor('#EBF5FB')   # 홀수행 연파랑
+    C_HEADER     = colors.HexColor('#1B3A6B')
+    C_SUBHDR     = colors.HexColor('#2E5FA3')
+    C_ACCENT     = colors.HexColor('#1F618D')
+    C_ROW_ODD    = colors.HexColor('#EBF5FB')
     C_ROW_EVEN   = colors.white
     C_BORDER     = colors.HexColor('#AEB6BF')
-    C_SEC_BG     = colors.HexColor('#EAF0FB')   # 섹션헤더 배경
+    C_SEC_BG     = colors.HexColor('#EAF0FB')
     C_WHITE      = colors.white
     C_STEP_BG    = [
-        colors.HexColor('#1B3A6B'),  # Step1 진남
-        colors.HexColor('#2471A3'),  # Step2
-        colors.HexColor('#2E86C1'),  # Step3
-        colors.HexColor('#3498DB'),  # Step4 밝은파랑
-        colors.HexColor('#5DADE2'),  # Step5 연파랑
+        colors.HexColor('#1B3A6B'),
+        colors.HexColor('#2471A3'),
+        colors.HexColor('#2E86C1'),
+        colors.HexColor('#3498DB'),
+        colors.HexColor('#5DADE2'),
     ]
     C_WARN_BG    = colors.HexColor('#FEF9E7')
     C_WARN_BDR   = colors.HexColor('#F0B429')
@@ -712,10 +732,8 @@ def generate_guide_pdf():
     # ── 문서 셋업 ─────────────────────────────────────────────────
     pdf_buffer = io.BytesIO()
     L, R, T, B = 15*mm, 15*mm, 14*mm, 12*mm
-    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
-                                rightMargin=R, leftMargin=L,
-                                topMargin=T,  bottomMargin=B)
-    page_w = A4[0] - L - R   # ≈ 180mm
+    pdf_doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, rightMargin=R, leftMargin=L, topMargin=T,  bottomMargin=B)
+    page_w = A4[0] - L - R
     elems  = []
 
     # ── 헬퍼 : 섹션 헤더 블록 ──────────────────────────────────
@@ -734,7 +752,7 @@ def generate_guide_pdf():
     # ── ① 문서 제목 헤더 박스 ────────────────────────────────────
     today_str = datetime.now().strftime("%Y년 %m월 %d일")
     title_tbl = Table([
-        [Paragraph('모바일동의(M스캔) 가이드 &amp; 프로세스', styles['GTitle'])],
+        [Paragraph('모바일동의(M스캔) 가이드 & 프로세스', styles['GTitle'])],
         [Paragraph(f'발행일: {today_str}  |  M스캔 전용 서류 처리 대시보드', styles['GSubDate'])],
     ], colWidths=[page_w])
     title_tbl.setStyle(TableStyle([
@@ -744,7 +762,6 @@ def generate_guide_pdf():
         ('BOTTOMPADDING', (0,0),(-1,-1), 7),
         ('TEXTCOLOR',     (0,0),(-1,-1), C_WHITE),
     ]))
-    # 제목 텍스트 색상은 style에서 지정하나 배경이 진하므로 override
     elems.append(title_tbl)
     elems.append(Spacer(1, 5*mm))
 
@@ -760,7 +777,6 @@ def generate_guide_pdf():
         Paragraph('목적 및 주요내용', styles['GSecHdr']),
     ]
     doc_rows.append(hdr_cells)
-    row_bgs = [C_ROW_ODD, C_ROW_EVEN]
     for i, doc in enumerate(GUIDANCE_DOCS[1:], 1):
         doc_rows.append([
             Paragraph(str(i), styles['GBodyBold']),
@@ -788,7 +804,6 @@ def generate_guide_pdf():
         ('ROWBACKGROUNDS',(0,1),(-1,-1), [C_ROW_ODD, C_ROW_EVEN]),
         ('FONTNAME',      (0,1),(0,-1),  font_bold),
         ('TEXTCOLOR',     (0,1),(0,-1),  C_ACCENT),
-        # No.4 행 (완전판매확인서) 서류명 셀에 볼드
         ('FONTNAME',      (1,4),(1,4),   font_bold),
     ]
     doc_tbl.setStyle(TableStyle(doc_style_cmds))
@@ -799,13 +814,10 @@ def generate_guide_pdf():
     elems.append(sec_hdr('【 모바일가입확인서 발송 및 결재 프로세스 】'))
     elems.append(Spacer(1, 2*mm))
 
-    # 5단계 → 상단 번호 칩 + 타이틀 + 설명 카드 형태
     step_cells = []
     for idx, step in enumerate(PROCESS_FLOW):
         bg = C_STEP_BG[idx] if idx < len(C_STEP_BG) else C_SUBHDR
-        # 번호 칩
-        chip = Table([[Paragraph(f"Step {step['step']}", styles['GStepNum'])]],
-                     colWidths=[page_w / len(PROCESS_FLOW) - 2*mm])
+        chip = Table([[Paragraph(f"Step {step['step']}", styles['GStepNum'])]], colWidths=[page_w / len(PROCESS_FLOW) - 2*mm])
         chip.setStyle(TableStyle([
             ('BACKGROUND',    (0,0),(-1,-1), bg),
             ('TOPPADDING',    (0,0),(-1,-1), 4),
@@ -814,8 +826,7 @@ def generate_guide_pdf():
         ]))
         step_cells.append(chip)
 
-    chips_row = Table([step_cells],
-                      colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
+    chips_row = Table([step_cells], colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
     chips_row.setStyle(TableStyle([
         ('TOPPADDING',    (0,0),(-1,-1), 0),
         ('BOTTOMPADDING', (0,0),(-1,-1), 0),
@@ -825,7 +836,6 @@ def generate_guide_pdf():
     elems.append(chips_row)
     elems.append(Spacer(1, 1*mm))
 
-    # 각 스텝 내용 카드
     step_content_cells = []
     for idx, step in enumerate(PROCESS_FLOW):
         bg = C_STEP_BG[idx] if idx < len(C_STEP_BG) else C_SUBHDR
@@ -847,8 +857,7 @@ def generate_guide_pdf():
         ]))
         step_content_cells.append(cell_tbl)
 
-    content_row = Table([step_content_cells],
-                        colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
+    content_row = Table([step_content_cells], colWidths=[page_w / len(PROCESS_FLOW)] * len(PROCESS_FLOW))
     content_row.setStyle(TableStyle([
         ('TOPPADDING',    (0,0),(-1,-1), 0),
         ('BOTTOMPADDING', (0,0),(-1,-1), 0),
@@ -912,7 +921,6 @@ def generate_guide_pdf():
 
     faq_rows = []
     for q_idx, (q, a) in enumerate(MOBILE_GUIDE["faq"]):
-        # Q 행
         q_tbl = Table([
             [Paragraph('Q', styles['GStepNum']),
              Paragraph(q, styles['GFaqQ'])],
@@ -929,7 +937,6 @@ def generate_guide_pdf():
         ]))
         faq_rows.append([q_tbl])
 
-        # A 행
         a_tbl = Table([
             [Paragraph('A', styles['GStepNum']),
              Paragraph(a.replace('\n', '<br/>'), styles['GFaqA'])],
@@ -1047,7 +1054,7 @@ def dashboard_page():
     with col1: st.success(f"총 {len(df):,}건의 데이터 로드 완료")
     with col2: st.info(f"기준: {get_file_update_time()}")
 
-    month_col = "월_피리어드 "
+    month_col = "월_피리어드"
     all_months = sorted(df[month_col].dropna().unique())
     st.subheader("분석 기간 선택")
     sel_months = st.multiselect("월 선택", all_months, default=[all_months[-1]] if all_months else [])
@@ -1059,8 +1066,8 @@ def dashboard_page():
     st.divider()
 
     tab_dash, tab_map, tab_target, tab_guide, tab_manual = st.tabs([
-        "📊 현황 대시보드", "🗺️ M스캔 활용 현황", "🎯 목표관리 & 공문출력", 
-        "📱 가이드 & 프로세스", "📚 매뉴얼 다운로드"
+        "📊 현황 대시보드",  "🗺️ M스캔 활용 현황",  "🎯 목표관리 & 공문출력", 
+        "📱 가이드 & 프로세스",  "📚 매뉴얼 다운로드"
     ])
 
     # ==========================================
@@ -1087,7 +1094,6 @@ def dashboard_page():
         is_target = "대상대비" in rate_type
         rate_col = "M스캔율_대상" if is_target else "M스캔율_완료"
         
-        # ✅ 월별/누적 동적 평균 계산
         if view_mode == "월별":
             monthly_stats = df_sel.groupby("월_피리어드").agg(M스캔건=("M스캔건", "sum"), 대상건=("대상건", "sum"))
             monthly_stats["rate"] = safe_rate(monthly_stats["M스캔건"], monthly_stats["대상건"])
