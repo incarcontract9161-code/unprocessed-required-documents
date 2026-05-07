@@ -74,8 +74,10 @@ def load_data():
         return pd.DataFrame()
     
     try:
-        df = pd.read_excel(EXCEL_FILE)
-        
+        df = pd.read_excel(
+    EXCEL_FILE,
+    engine="pyxlsb",
+    converters={7: str}        
         if df.empty:
             return pd.DataFrame()
         
