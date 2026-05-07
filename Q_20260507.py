@@ -1162,7 +1162,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
 def login_page():
     st.title("🔐 시스템 접속 ")
     st.markdown(" 단일 비밀번호 로 접속합니다. ")
-    pwd = st.text_input("접속 비밀번호를 입력하세요 ", type="password ")
+    pwd = st.text_input("접속 비밀번호를 입력하세요 ", type="password")
     if st.button("접속하기 ", use_container_width=True, type="primary "):
         if pwd == APP_PASSWORD:
             st.session_state.logged_in = True
