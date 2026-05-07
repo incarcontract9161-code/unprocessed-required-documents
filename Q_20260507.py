@@ -1141,7 +1141,7 @@ def ledger_excel(families_by_dept, period_text, df_src):
                 ["4 ",  "완전판매확인서\n(대상: 종신, CI, CEO경기, 고액) ",  "금융소비자보호법 제17·19조\n영업지원기준안 ", 
                  "약관,청약서 부본 제공, 중요 상품 이해 및 자발적 가입 확인, 설명 의무 이행 증빙력 확보 "]
             ]
-            for row_data in docs_
+            for row_data in docs_:
                 for ci, val in enumerate(row_data, 1):
                     c = ws_f.cell(r_f, ci, val)
                     c.font = bf; c.border = bdr; c.alignment = Alignment(horizontal="left " if ci > 1 else "center ", vertical="top ", wrapText=True)
