@@ -77,7 +77,7 @@ def load_data():
         df = pd.read_excel(
     EXCEL_FILE,
     engine="pyxlsb",
-    converters={7: str}        
+    converters={7: str} )       
         if df.empty:
             return pd.DataFrame()
         
