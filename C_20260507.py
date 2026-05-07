@@ -1449,7 +1449,7 @@ def dashboard_page():
                 )
 
             cr1, cr2 = st.columns(2)
-             with cr1:
+            with cr1:
                 if st.button("계층 리포트 Excel ", use_container_width=True):
                     with st.spinner("생성 중... "):
                         buf = report_excel(df, sel_months)
