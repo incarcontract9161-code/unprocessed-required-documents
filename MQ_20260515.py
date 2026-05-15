@@ -539,17 +539,24 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
         # ── [수정 5] 사용자 비율 계산 (고유사번 기준) ──────────────
         using_rate   = (using_fa / total_fa * 100) if total_fa > 0 else 0.0
 
-        # ── [수정 6] 사용자 평균 M스캔율 → 가중평균 방식 ───────────
-        # 단순 mean() 대신: 사용자 전체 M스캔건 합 / 사용자 전체 대상건 합
-        using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0]
+        # ── [수정 6] 사용자 평균 M스캔율 → 고유 FA별 개인 사용률 평균 ──
+        # ① 사용 FA(M스캔건 > 0)만 추출
+        # ② 각 FA의 개인 사용률 = (M스캔건 / 대상건) × 100 먼저 계산
+        # ③ 그 개인 사용률들의 산술평균(mean)이 최종 지표
+        #
+        # 예) FA A: 10건 중 5건 → 50%
+        #     FA B: 4건 중 4건  → 100%
+        #     평균 = (50 + 100) / 2 = 75%  ← 원하는 방식
+        using_fa_stats = fa_stats[fa_stats["총M스캔건"] > 0].copy()
         if not using_fa_stats.empty:
-            total_mscan_sum  = using_fa_stats["총M스캔건"].sum()   # 사용자 전체 M스캔건 합
-            total_target_sum = using_fa_stats["총대상건"].sum()    # 사용자 전체 대상건 합
-            avg_m_scan_rate  = (total_mscan_sum / total_target_sum * 100) if total_target_sum > 0 else 0.0
+            # 대상건이 0인 행은 나누기 오류 방지를 위해 제외 (이론상 발생 안 하지만 안전 처리)
+            using_fa_stats = using_fa_stats[using_fa_stats["총대상건"] > 0]
+            using_fa_stats["개인사용률"] = (
+                using_fa_stats["총M스캔건"] / using_fa_stats["총대상건"] * 100
+            )
+            avg_m_scan_rate = using_fa_stats["개인사용률"].mean()
         else:
-            total_mscan_sum  = 0
-            total_target_sum = 0
-            avg_m_scan_rate  = 0.0
+            avg_m_scan_rate = 0.0
 
         # ── [수정 7] 검증 로그 (PDF 생성 전 st.write로 확인) ────────
         with st.expander("🔍 FA 집계 검증 로그 (PDF 생성 전 확인)", expanded=False):
@@ -558,15 +565,20 @@ def generate_agent_report_pdf(title, receiver, reference, sender_dept, dispatche
             st.write(f"✅ **사용 FA 수** (M스캔건 > 0): {using_fa:,}명")
             st.write(f"❌ **미사용 FA 수** (M스캔건 = 0): {not_using_fa:,}명")
             st.write(f"📈 **FA 사용률**: {using_rate:.2f}%  ({using_fa:,} / {total_fa:,} × 100)")
-            st.write(f"🧮 **사용자 전체 대상건 합**: {total_target_sum:,}건")
-            st.write(f"🧮 **사용자 전체 M스캔건 합**: {total_mscan_sum:,}건")
-            st.write(f"📐 **사용자 평균 M스캔율 계산식**: {total_mscan_sum:,} / {total_target_sum:,} × 100 = **{avg_m_scan_rate:.2f}%** (가중평균)")
+            st.write(f"📐 **사용자 평균 M스캔율 계산 방식**: 고유 FA별 개인 사용률 산술평균")
+            st.write(f"   = 각 사용 FA의 (M스캔건 ÷ 대상건 × 100) 평균 = **{avg_m_scan_rate:.2f}%**")
             if not using_fa_stats.empty:
-                st.write("🗂️ **사용 FA 상위 10명 미리보기**")
+                st.write("🗂️ **사용 FA 상위 10명 미리보기 (개인사용률 기준 정렬)**")
                 st.dataframe(
-                    using_fa_stats.sort_values("총M스캔건", ascending=False)
+                    using_fa_stats.sort_values("개인사용률", ascending=False)
                     .head(10)
-                    .rename(columns={"__fa_id__": "사번(정제)", "총대상건": "대상건 합", "총M스캔건": "M스캔건 합"}),
+                    .rename(columns={
+                        "__fa_id__": "사번(정제)",
+                        "총대상건":  "대상건 합",
+                        "총M스캔건": "M스캔건 합",
+                        "개인사용률": "개인 M스캔율(%)"
+                    })
+                    [["사번(정제)", "대상건 합", "M스캔건 합", "개인 M스캔율(%)"]],
                     use_container_width=True, hide_index=True
                 )
 
