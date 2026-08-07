@@ -460,7 +460,7 @@ def report_pdf(df, months):
 # ==========================================
 # 9. 전체 페이지 PDF
 
-def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
+def report_fullpage_pdf(df, months, agg_group, map_level, dash_doc_types=None, dash_chart_mode="그룹형", dash_top_n=15, map_type="🔲 트리맵"):
     fn, st_, buf = register_korean_font(), _pdf_styles(register_korean_font()), io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=12*mm,leftMargin=12*mm, topMargin=12*mm,bottomMargin=12*mm)
     today, period_str = datetime.now().strftime("%Y년 %m월 %d일"), ", ".join(months) if months else "전체"
@@ -474,38 +474,61 @@ def report_fullpage_pdf(df, months, agg_group, map_level, top_n=15):
     summary = [["총 계약건수", f"{len(df_sel):,}"], ["총 미처리건수", f"{tot:,}"], ["미처리율", f"{rate:.1f}%"], ["FA/비교/완판", f"{fa_t:,} / {bi_t:,} / {cs_t:,}"]]
     E.append(_tbl([[s[0], s[1]] for s in summary], [90, 150], fn, header_rows=0, align="LEFT")); E.append(Spacer(1,8))
 
-    agg = df_sel.groupby(agg_group).agg(FA=("FA_miss","sum"), 비교=("비교_miss","sum"), 완판=("완판_miss","sum"), 대상건=("증권번호","count")).reset_index()
-    agg["총미스캔"] = agg[["FA","비교","완판"]].sum(axis=1)
-    agg["미처리율"] = (agg["총미스캔"] / agg["대상건"] * 100).round(1)
-    agg = agg.sort_values("총미스캔", ascending=False).head(top_n)
+    dash_doc_types = dash_doc_types or ["총 미스캄"]
+    agg = df_sel.groupby(agg_group).agg(FA고지_미스캄=("FA_miss","sum"), 비교설명_미스캄=("비교_miss","sum"), 완전판매_미스캄=("완판_miss","sum"), 대상건=("증권번호","count")).reset_index()
+    agg["총_미스캄"] = agg[["FA고지_미스캄","비교설명_미스캄","완전판매_미스캄"]].sum(axis=1)
+    agg["미처리율"] = (agg["총_미스캄"] / agg["대상건"] * 100).round(1)
+    agg = agg.rename(columns={agg_group: "조직"})
+    agg = agg.sort_values("총_미스캄", ascending=False).head(dash_top_n)
     if not agg.empty:
-        E.append(Paragraph(f"▶ {agg_group}별 상위 {top_n} 미처리 현황", st_["section"]))
-        hdr = [[agg_group, "총미스캔", "미처리율", "FA", "비교", "완판", "대상건"]]
-        rows = [[r[agg_group], f"{int(r['총미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA']):,}", f"{int(r['비교']):,}", f"{int(r['완판']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
-        E.append(_tbl(hdr + rows, [90, 50, 42, 42, 42, 42, 42], fn)); E.append(Spacer(1,8))
+        E.append(Paragraph(f"▶ 현황 대시보드 차트 (집계: {agg_group})", st_["section"]))
+        hdr = [["조직", "총_미스캄", "미처리율", "FA고지", "비교설명", "완전판매", "대상건"]]
+        rows = [[r["조직"], f"{int(r['총_미스캄']):,}", f"{r['미처리율']:.1f}%", f"{int(r['FA고지_미스캄']):,}", f"{int(r['비교설명_미스캄']):,}", f"{int(r['완전판매_미스캄']):,}", f"{int(r['대상건']):,}"] for _, r in agg.iterrows()]
+        E.append(_tbl(hdr + rows, [90, 60, 42, 42, 42, 42, 42], fn)); E.append(Spacer(1,8))
         try:
-            fig_bar = px.bar(agg, x=agg_group, y="총미스캔", text="총미스캔", color="총미스캔", color_continuous_scale="Reds")
-            fig_bar.update_layout(title_text=f"{agg_group}별 상위 {top_n} 미처리 현황", xaxis_tickangle=-45, margin=dict(l=20,r=20,t=40,b=20), width=1000, height=340)
-            fig_bar.update_traces(textposition='outside')
-            E.append(_fig_to_image(fig_bar, max_width=1000, height=340)); E.append(Spacer(1,10))
+            if len(dash_doc_types)==1 and dash_doc_types[0]=="총 미스캄":
+                fig_dash = go.Figure()
+                fig_dash.add_trace(go.Bar(x=agg["조직"], y=agg["총_미스캄"], text=agg["총_미스캄"], textposition="outside", marker_color=agg["총_미스캄"], marker_colorscale="Reds"))
+                fig_dash.update_layout(title=f"미처리 건수 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캄"].max()*1.2 if agg["총_미스캄"].max()>0 else 10]), height=340)
+            elif len(dash_doc_types)==1:
+                cm = {"FA고지":"FA고지_미스캄","비교설명":"비교설명_미스캄","완전판매":"완전판매_미스캄"}
+                fig_dash = px.bar(agg, x="조직", y=cm[dash_doc_types[0]], title=f"{dash_doc_types[0]} 미스캄 TOP {dash_top_n}", text=cm[dash_doc_types[0]], color=cm[dash_doc_types[0]], color_continuous_scale="Blues")
+                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
+            else:
+                cm2 = {"FA고지":"FA고지_미스캄","비교설명":"비교설명_미스캄","완전판매":"완전판매_미스캄","총 미스캄":"총_미스캄"}
+                p = agg[["조직"]+[cm2[d] for d in dash_doc_types]].copy()
+                p.columns=["조직"]+dash_doc_types
+                p = p.melt("조직", var_name="종류", value_name="건수")
+                fig_dash = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if dash_chart_mode=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캄":"#9B59B6"})
+                fig_dash.update_layout(xaxis_tickangle=-45, height=340)
+            E.append(_fig_to_image(fig_dash, max_width=1000, height=340)); E.append(Spacer(1,10))
+        except Exception:
+            pass
+        try:
+            fig_trend = go.Figure(); fig_trend.add_trace(go.Scatter(x=agg["조직"], y=agg["총_미스캄"], mode="lines+markers", line=dict(shape="spline", color="#CC0000"), marker=dict(size=6)))
+            fig_trend.update_layout(title=f"미처리 건수 추이 TOP {dash_top_n}", xaxis_tickangle=-45, yaxis=dict(range=[0, agg["총_미스캄"].max()*1.2 if agg["총_미스캄"].max()>0 else 10]), height=340)
+            E.append(_fig_to_image(fig_trend, max_width=1000, height=340)); E.append(Spacer(1,10))
         except Exception:
             pass
 
-    map_agg = df_sel.groupby(map_level).agg(미스캔=("미스캔","sum"), 대상건=("증권번호","count")).reset_index()
-    map_agg["미처리율"] = (map_agg["미스캔"] / map_agg["대상건"] * 100).round(1)
-    map_agg = map_agg.sort_values("미스캔", ascending=False).head(top_n)
+    map_agg = df_sel.groupby(map_level).agg(미스캄=("미스캄","sum"), 대상건=("증권번호","count")).reset_index()
+    map_agg["미처리율"] = (map_agg["미스캄"] / map_agg["대상건"] * 100).round(1)
+    map_agg = map_agg.sort_values("미스캄", ascending=False).head(dash_top_n)
     if not map_agg.empty:
-        E.append(Paragraph(f"▶ {map_level}별 미스캀 분포 요약", st_["section"]))
-        hdr = [[map_level, "미스캔", "미처리율", "대상건"]]
-        rows = [[r[map_level], f"{int(r['미스캔']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
+        E.append(Paragraph(f"▶ {map_level}별 미스캄 분포 요약 ({map_type})", st_["section"]))
+        hdr = [[map_level, "미스캄", "미처리율", "대상건"]]
+        rows = [[r[map_level], f"{int(r['미스캄']):,}", f"{r['미처리율']:.1f}%", f"{int(r['대상건']):,}"] for _, r in map_agg.iterrows()]
         E.append(_tbl(hdr + rows, [100, 55, 55, 55], fn)); E.append(Spacer(1,8))
         try:
-            fig_map = px.treemap(map_agg, path=[map_level], values="미스캀", color="미처리율", title=f"{map_level}별 미스캀 분포", color_continuous_scale="RdYlGn_r")
+            if map_type == "🥧 원그래프":
+                fig_map = px.pie(map_agg, values="미스캄", names=map_level, title=f"{map_level}별 미스캄 건수 비중", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+                fig_map.update_traces(textposition='inside', textinfo='percent+label')
+            else:
+                fig_map = px.treemap(map_agg, path=[map_level], values="미스캄", color="미처리율", title=f"{map_level}별 미스캄 분포", color_continuous_scale="RdYlGn_r")
             fig_map.update_layout(margin=dict(l=20,r=20,t=35,b=20), width=1000, height=340)
             E.append(_fig_to_image(fig_map, max_width=1000, height=340)); E.append(Spacer(1,10))
         except Exception:
             pass
-
     pivot = build_monthly_hierarchy_pivot(df, months)
     if not pivot.empty:
         E.append(PageBreak()); E.append(Paragraph("▶ 월별 피벗형 계층 리포트", st_["section"]))
@@ -860,10 +883,10 @@ def dashboard_page():
                 use_container_width=True,
                 hide_index=True
             )
-            top_n = st.slider("차트 표시 개수", 5, 30, 30); top = agg.head(top_n)
+            top_n = st.slider("차트 표시 개수", 5, 30, 30, key="dash_top_n"); top = agg.head(top_n)
             c1, c2 = st.columns(2)
             with c1:
-                doc_types = st.multiselect("표시 서류", ["FA고지","비교설명","완전판매","총 미스캔"], default=["총 미스캔"])
+                doc_types = st.multiselect("표시 서류", ["FA고지","비교설명","완전판매","총 미스캔"], default=["총 미스캔"], key="dash_doc_types")
                 if doc_types:
                     max_v, yr = top["총_미스캔"].max(), [0, top["총_미스캔"].max()*1.2] if top["총_미스캔"].max()>0 else [0,10]
                     if len(doc_types)==1 and doc_types[0]=="총 미스캔":
@@ -874,7 +897,7 @@ def dashboard_page():
                         fig = px.bar(top, x="조직", y=cm[doc_types[0]], title=f"{doc_types[0]} 미스캔 TOP {top_n}", text=cm[doc_types[0]], color=cm[doc_types[0]], color_continuous_scale="Blues")
                         fig.update_layout(xaxis_tickangle=-45, height=420); st.plotly_chart(fig, use_container_width=True)
                     else:
-                        ct = st.radio("차트 유형", ["그룹형","누적형"], horizontal=True)
+                        ct = st.radio("차트 유형", ["그룹형","누적형"], horizontal=True, key="dash_chart_mode")
                         cm2 = {"FA고지":"FA고지_미스캔","비교설명":"비교설명_미스캔","완전판매":"완전판매_미스캔","총 미스캔":"총_미스캔"}
                         p = top[["조직"]+[cm2[d] for d in doc_types]].copy(); p.columns=["조직"]+doc_types; p=p.melt("조직",var_name="종류",value_name="건수")
                         fig = px.bar(p, x="조직", y="건수", color="종류", barmode="group" if ct=="그룹형" else "stack", color_discrete_map={"FA고지":"#FF6B6B","비교설명":"#4ECDC4","완전판매":"#45B7D1","총 미스캔":"#9B59B6"})
@@ -942,8 +965,12 @@ def dashboard_page():
             pivot_df = build_monthly_hierarchy_pivot(df, sel_months)
             if not pivot_df.empty:
                 st.markdown("### 📌 월별 피벗형 계층 리포트")
+                pivot_display = pivot_df.copy()
+                for col in pivot_display.columns:
+                    if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율"):
+                        pivot_display[col] = pivot_display[col].apply(lambda x: int(x) if pd.notna(x) else "")
                 st.dataframe(
-                    pivot_df.style.format({col: "{:,.0f}" for col in pivot_df.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_df.columns if col.endswith("_미처리율")}),
+                    pivot_display.style.format({col: "{:,}" for col in pivot_display.columns if col not in ["구분","부문","총괄","부서"] and not col.endswith("_미처리율")}).format({col: "{:.1f}%" for col in pivot_display.columns if col.endswith("_미처리율")}),
                     use_container_width=True,
                     hide_index=True,
                     height=420
@@ -962,7 +989,11 @@ def dashboard_page():
                 with st.spinner("전체 페이지 PDF 생성 중..."):
                     agg_group_state = st.session_state.get("agg_group", "부문")
                     map_level_state = st.session_state.get("map_level", "부문")
-                    buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state)
+                    dash_doc_types = st.session_state.get("dash_doc_types", ["총 미스캄"])
+                    dash_chart_mode = st.session_state.get("dash_chart_mode", "그룹형")
+                    dash_top_n = st.session_state.get("dash_top_n", 10)
+                    map_type_state = st.session_state.get("map_type", "🔲 트리맵")
+                    buf_full = report_fullpage_pdf(df, sel_months, agg_group_state, map_level_state, dash_doc_types, dash_chart_mode, dash_top_n, map_type_state)
                     st.download_button("⬇️ 전체 페이지 PDF 다운로드", buf_full, f"전체페이지리포트_{period_text.replace(' ','_')}.pdf", "application/pdf", key="dl_fullpage_pdf_btn")
 
     # ── TAB 4 : 관리대장 출력 ─────────────────────────
